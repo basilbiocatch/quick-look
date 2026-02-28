@@ -1,0 +1,16 @@
+{
+  "name": "quicklook-sdk",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/quicklook-sdk.js",
+  "scripts": {
+    "build": "node esbuild.config.js"
+  },
+  "dependencies": {
+    "pako": "^2.1.0",
+    "@rrweb/record": "^2.0.0-alpha.17"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

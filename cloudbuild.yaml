@@ -1,0 +1,44 @@
+# Build and deploy quicklook-server to Cloud Run.
+# Run from repo root: ./release.sh production (which populates public/ then runs gcloud builds submit)
+# Or: gcloud builds submit . --config=cloudbuild.yaml --substitutions=_REGION=us-central1,_SERVICE_NAME=quicklook-server
+
+substitutions:
+  _REGION: us-central1
+  _SERVICE_NAME: quicklook-server
+
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-t"
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/quicklook/${_SERVICE_NAME}:${BUILD_ID}"
+      - "-f"
+      - "quicklook-server/Dockerfile"
+      - "quicklook-server"
+    id: "build"
+
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "push"
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/quicklook/${_SERVICE_NAME}:${BUILD_ID}"
+    id: "push"
+    waitFor: ["build"]
+
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: "gcloud"
+    args:
+      - "run"
+      - "deploy"
+      - "${_SERVICE_NAME}"
+      - "--image"
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/quicklook/${_SERVICE_NAME}:${BUILD_ID}"
+      - "--region"
+      - "${_REGION}"
+      - "--platform"
+      - "managed"
+      - "--allow-unauthenticated"
+    id: "deploy"
+    waitFor: ["push"]
+
+options:
+  logging: CLOUD_LOGGING_ONLY
