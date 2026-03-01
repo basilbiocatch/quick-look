@@ -23,6 +23,7 @@ import NavigateBeforeIcon from "@mui/icons-material/NavigateBefore";
 import NavigateNextIcon from "@mui/icons-material/NavigateNext";
 import ReplayIcon from "@mui/icons-material/Replay";
 import SkipNextIcon from "@mui/icons-material/SkipNext";
+import CloseIcon from "@mui/icons-material/Close";
 import { useParams, useNavigate } from "react-router-dom";
 import { getSession, getEvents, getSessions, getProject, updateProject } from "../api/quicklookApi";
 import { getEventsDurationMs, getPagesFromEvents, getEventMarksFromEvents, urlPageKey } from "../utils/activityList";
@@ -716,6 +717,24 @@ export default function ReplayPage() {
             gap: 3,
           }}
         >
+          <Tooltip title="Close">
+            <IconButton
+              onClick={() => setShowEndOverlay(false)}
+              aria-label="Close"
+              sx={{
+                position: "absolute",
+                top: 16,
+                right: 16,
+                bgcolor: "background.paper",
+                color: "text.primary",
+                "&:hover": {
+                  bgcolor: "action.hover",
+                },
+              }}
+            >
+              <CloseIcon />
+            </IconButton>
+          </Tooltip>
           {/* Action Buttons */}
           <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
             {/* Replay Button */}
