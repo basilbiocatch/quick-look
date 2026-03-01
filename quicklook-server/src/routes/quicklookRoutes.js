@@ -4,8 +4,20 @@ import express from "express";
 import * as quicklookController from "../controllers/quicklookController.js";
 import { requireAuth } from "../middleware/jwtAuth.js";
 import { validateOrigin } from "../middleware/validateOrigin.js";
+import { isDbConnected } from "../db.js";
 
 const router = express.Router();
+
+/** Fail fast with 503 if DB not connected (e.g. MongoDB unreachable from Cloud Run). */
+function requireDb(req, res, next) {
+  if (isDbConnected()) return next();
+  res.status(503).json({
+    success: false,
+    error: "Database unavailable. If this is Cloud Run, ensure MongoDB allows connections (e.g. Atlas: Network Access → Allow Access from Anywhere).",
+  });
+}
+
+router.use(requireDb);
 
 router.get("/projects", requireAuth, quicklookController.getProjects);
 router.post("/projects", requireAuth, quicklookController.createProject);

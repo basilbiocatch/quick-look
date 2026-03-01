@@ -37,9 +37,9 @@ steps:
       - "--platform"
       - "managed"
       - "--allow-unauthenticated"
-      # Env vars (non-secret). Also set in Cloud Run: QUICKLOOK_DB, JWT_SECRET.
-      # For GCS: use default credentials (no GCS_KEY_FILE) if service account has Storage Object Admin on the bucket.
-      - "--set-env-vars"
+      # Update only these vars so existing QUICKLOOK_DB and JWT_SECRET (set in Console or via gcloud) are preserved.
+      # First deploy: set QUICKLOOK_DB and JWT_SECRET in Console or: gcloud run services update quicklook-server --region=... --update-env-vars=QUICKLOOK_DB=...,JWT_SECRET=...
+      - "--update-env-vars"
       - "CHUNK_STORAGE=gcs,GCS_BUCKET=quicklook-chunks,GCP_PROJECT_ID=${PROJECT_ID}"
     id: "deploy"
     waitFor: ["push"]

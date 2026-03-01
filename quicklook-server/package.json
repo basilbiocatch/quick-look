@@ -9,6 +9,7 @@
     "seed:localinteractive": "node scripts/seedLocalInteractiveProject.js"
   },
   "dependencies": {
+    "compression": "^1.7.4",
     "@google-cloud/storage": "^7.0.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",

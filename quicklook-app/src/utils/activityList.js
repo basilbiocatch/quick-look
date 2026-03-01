@@ -72,6 +72,31 @@ export function buildActivityList(events) {
   return activities;
 }
 
+/**
+ * Compress only long idle gaps so replay stays at 1x through short activity bursts.
+ * Gaps longer than thresholdMs are replaced by compressedMs (e.g. skip 5 min → 2 s).
+ * Use with skipInactive: false in rrweb so we control skip behavior.
+ * @param {Array} events - rrweb events (will be shallow-cloned; timestamps modified)
+ * @param {number} thresholdMs - only compress gaps larger than this (e.g. 30000 = 30 s)
+ * @param {number} compressedMs - replace long gaps with this (e.g. 2000 = 2 s)
+ * @returns {Array} new event array with adjusted timestamps
+ */
+export function compressLongGaps(events, thresholdMs = 30 * 1000, compressedMs = 2 * 1000) {
+  if (!Array.isArray(events) || events.length === 0) return events;
+  const baseline = events[0].timestamp ?? 0;
+  let logicalTime = 0;
+  return events.map((event, i) => {
+    const prevTimestamp = i === 0 ? baseline : events[i - 1].timestamp ?? baseline;
+    const ts = event.timestamp ?? baseline;
+    if (i > 0) {
+      const gap = Math.max(0, ts - prevTimestamp);
+      logicalTime += gap > thresholdMs ? compressedMs : gap;
+    }
+    const newTimestamp = baseline + logicalTime;
+    return { ...event, timestamp: newTimestamp };
+  });
+}
+
 /** Get duration in ms from first to last event timestamp */
 export function getEventsDurationMs(events) {
   if (!Array.isArray(events) || events.length < 2) return 0;
@@ -94,7 +119,7 @@ export function getEventMarksFromEvents(events, maxMarks = 150) {
 /** Event type for timeline mark styling */
 export const EVENT_MARK_TYPES = { URL: "url", CLICK: "click", INPUT: "input", CUSTOM: "custom" };
 
-/** Get timeline marks with type for styling (bigger, colored per type). Returns { timeMs, type }[], limited to maxMarks. */
+/** Get timeline marks with type for styling (bigger, colored per type). Returns { timeMs, type }[], limited to maxMarks, no duplicate positions. */
 export function getEventMarksWithTypes(events, maxMarks = 150) {
   if (!Array.isArray(events)) return [];
   const activities = buildActivityList(events);
@@ -107,7 +132,16 @@ export function getEventMarksWithTypes(events, maxMarks = 150) {
     .map(([timeMs, type]) => ({ timeMs, type }));
   if (sorted.length <= maxMarks) return sorted;
   const step = (sorted.length - 1) / (maxMarks - 1);
-  return Array.from({ length: maxMarks }, (_, i) => sorted[Math.round(i * step)]);
+  const result = [];
+  const seen = new Set();
+  for (let i = 0; i < maxMarks; i++) {
+    const item = sorted[Math.min(Math.round(i * step), sorted.length - 1)];
+    if (!seen.has(item.timeMs)) {
+      seen.add(item.timeMs);
+      result.push(item);
+    }
+  }
+  return result;
 }
 
 /** Normalize URL to page only (origin + pathname), no search or hash. Used for exclusion matching. */

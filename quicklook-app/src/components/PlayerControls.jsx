@@ -9,13 +9,14 @@ import {
   MenuItem,
   FormControlLabel,
   Switch,
+  Tooltip,
 } from "@mui/material";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import PauseIcon from "@mui/icons-material/Pause";
 import Replay5Icon from "@mui/icons-material/Replay5";
 import { formatTimecode } from "../utils/sessionParser";
 
-const SPEED_OPTIONS = [0.5, 1, 1.5, 2, 4, 8];
+const SPEED_OPTIONS = [0.25, 0.5, 1, 1.5, 2, 4, 8];
 
 const MARK_COLORS = {
   url: "#2196f3",
@@ -24,28 +25,42 @@ const MARK_COLORS = {
   custom: "#9c27b0",
 };
 
+const MARK_TYPE_LABELS = {
+  url: "URL change",
+  click: "Click",
+  input: "Input",
+  custom: "Custom event",
+};
+
 function TimelineMark(props) {
-  const { typeByIndex, ...rest } = props;
+  const { typeByIndex, labelByIndex, ...rest } = props;
   const index = rest["data-index"];
   const type = typeByIndex?.[index] || "custom";
   const color = MARK_COLORS[type] ?? MARK_COLORS.custom;
-  return (
+  const tooltipTitle = labelByIndex?.[index] ?? (MARK_TYPE_LABELS[type] ?? "Event");
+  const content = (
     <span
       {...rest}
       data-mark-type={type}
       style={{
         ...rest.style,
-        width: 10,
-        height: 10,
+        position: "absolute",
+        top: "50%",
+        width: 6,
+        height: 6,
         borderRadius: "50%",
         backgroundColor: color,
-        border: "1px solid rgba(255,255,255,0.7)",
-        boxShadow: "0 0 0 1px rgba(0,0,0,0.12)",
-        marginLeft: -5,
+        boxShadow: `0 0 4px ${color}40`,
         transform: "translate(-50%, -50%)",
-        opacity: rest.markActive ? 1 : 0.9,
+        opacity: rest.markActive ? 1 : 0.85,
+        transition: "all 0.2s ease",
       }}
     />
+  );
+  return (
+    <Tooltip title={tooltipTitle} placement="top" arrow enterDelay={300} leaveDelay={0}>
+      {content}
+    </Tooltip>
   );
 }
 
@@ -129,6 +144,11 @@ export default function PlayerControls({
       ? eventMarks.slice(0, 100).map((ms) => ({ value: ms }))
       : [];
   const markTypeByIndex = useTypedMarks ? eventMarksWithTypes.slice(0, 100).map((m) => m.type) : [];
+  const markLabelsByIndex = useTypedMarks
+    ? eventMarksWithTypes.slice(0, 100).map(
+        (m) => `${MARK_TYPE_LABELS[m.type] ?? "Event"} · ${formatTimecode(m.timeMs)}`
+      )
+    : [];
 
   return (
     <Box
@@ -174,17 +194,19 @@ export default function PlayerControls({
             ))}
           </Select>
         </FormControl>
-        <FormControlLabel
-          control={
-            <Switch
-              size="small"
-              checked={skipInactive}
-              onChange={handleSkipInactiveToggle}
-              color="primary"
-            />
-          }
-          label={<Typography variant="caption" sx={{ fontSize: "0.75rem" }}>Skip inactivity</Typography>}
-        />
+        <Tooltip title="Only skips gaps longer than 30 s; short activity plays at normal speed">
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={skipInactive}
+                onChange={handleSkipInactiveToggle}
+                color="primary"
+              />
+            }
+            label={<Typography variant="caption" sx={{ fontSize: "0.75rem" }}>Skip inactivity</Typography>}
+          />
+        </Tooltip>
         <Box sx={{ flex: 1, minWidth: 120, mx: 1 }}>
           <Slider
             size="small"
@@ -198,7 +220,7 @@ export default function PlayerControls({
             valueLabelFormat={(v) => formatTimecode(v)}
             slots={{ mark: useTypedMarks ? TimelineMark : undefined }}
             slotProps={{
-              mark: useTypedMarks ? { typeByIndex: markTypeByIndex } : undefined,
+              mark: useTypedMarks ? { typeByIndex: markTypeByIndex, labelByIndex: markLabelsByIndex } : undefined,
             }}
             sx={{
               py: 0.5,

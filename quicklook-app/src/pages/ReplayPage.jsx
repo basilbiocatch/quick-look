@@ -26,7 +26,7 @@ import SkipNextIcon from "@mui/icons-material/SkipNext";
 import CloseIcon from "@mui/icons-material/Close";
 import { useParams, useNavigate } from "react-router-dom";
 import { getSession, getEvents, getSessions, getProject, updateProject } from "../api/quicklookApi";
-import { getEventsDurationMs, getPagesFromEvents, getEventMarksFromEvents, getEventMarksWithTypes, urlPageKey } from "../utils/activityList";
+import { getEventsDurationMs, getPagesFromEvents, getEventMarksFromEvents, getEventMarksWithTypes, urlPageKey, compressLongGaps } from "../utils/activityList";
 import RightPanel from "../components/RightPanel";
 import PlayerControls from "../components/PlayerControls";
 import DevToolsPanel, { getConsoleEvents } from "../components/DevToolsPanel";
@@ -120,17 +120,22 @@ export default function ReplayPage() {
   };
 
   const hasFullSnapshot = events.some((e) => Number(e.type) === 2);
-  const durationMs = events.length >= 2
-    ? getEventsDurationMs(events)
+  // When "Skip inactivity" is on: compress only gaps > 30s to 2s so short activity bursts play at real 1x
+  const playerEvents = React.useMemo(
+    () => (skipInactive ? compressLongGaps(events, 30 * 1000, 2 * 1000) : events),
+    [events, skipInactive]
+  );
+  const durationMs = playerEvents.length >= 2
+    ? getEventsDurationMs(playerEvents)
     : (session?.duration ?? (session?.closedAt && session?.createdAt ? new Date(session.closedAt) - new Date(session.createdAt) : 0));
-  const pages = React.useMemo(() => getPagesFromEvents(events), [events]);
+  const pages = React.useMemo(() => getPagesFromEvents(playerEvents), [playerEvents]);
   const excludedSet = React.useMemo(() => new Set(excludedUrls), [excludedUrls]);
   const visiblePages = React.useMemo(
     () => pages.filter((p) => !excludedSet.has(urlPageKey(p.url))),
     [pages, excludedSet]
   );
-  const eventMarks = React.useMemo(() => getEventMarksFromEvents(events), [events]);
-  const eventMarksWithTypes = React.useMemo(() => getEventMarksWithTypes(events), [events]);
+  const eventMarks = React.useMemo(() => getEventMarksFromEvents(playerEvents), [playerEvents]);
+  const eventMarksWithTypes = React.useMemo(() => getEventMarksWithTypes(playerEvents), [playerEvents]);
   const currentPageIndex = React.useMemo(() => {
     if (visiblePages.length === 0) return 0;
     let idx = 0;
@@ -345,7 +350,7 @@ export default function ReplayPage() {
   };
 
   useEffect(() => {
-    if (!events.length || !hasFullSnapshot || !containerRef.current || !session) return;
+    if (!playerEvents.length || !hasFullSnapshot || !containerRef.current || !session) return;
 
     let mounted = true;
     let playerInstance = null;
@@ -369,12 +374,12 @@ export default function ReplayPage() {
         playerInstance = new rrwebPlayer({
           target: containerRef.current,
           props: {
-            events,
+            events: playerEvents,
             width: w,
             height: h,
             autoPlay: false,
             showController: false,
-            skipInactive: true,
+            skipInactive: false,
           },
         });
         playerRef.current = playerInstance;
@@ -408,7 +413,7 @@ export default function ReplayPage() {
         containerRef.current.innerHTML = '';
       }
     };
-  }, [events, session]);
+  }, [playerEvents, session]);
 
   if (loading) {
     return (

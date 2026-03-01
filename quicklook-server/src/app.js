@@ -4,6 +4,7 @@ import "dotenv/config";
 import path from "path";
 import { fileURLToPath } from "url";
 import express from "express";
+import compression from "compression";
 import cors from "cors";
 import fs from "fs";
 import quicklookRoutes from "./routes/quicklookRoutes.js";
@@ -21,6 +22,7 @@ const app = express();
 app.set("trust proxy", true);
 
 app.use(cors({ origin: "*" }));
+app.use(compression());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 

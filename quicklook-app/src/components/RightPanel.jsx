@@ -12,6 +12,10 @@ import {
   ListItemText,
   Button,
   Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
@@ -26,10 +30,26 @@ import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import SaveIcon from "@mui/icons-material/Save";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import AndroidIcon from "@mui/icons-material/Android";
+import AppleIcon from "@mui/icons-material/Apple";
+import DesktopWindowsIcon from "@mui/icons-material/DesktopWindows";
+import PhoneAndroidIcon from "@mui/icons-material/PhoneAndroid";
+import TabletIcon from "@mui/icons-material/Tablet";
+import LaptopIcon from "@mui/icons-material/Laptop";
+import LanguageIcon from "@mui/icons-material/Language";
+import { useNavigate } from "react-router-dom";
 import { parseDevice, parseOS, parseBrowser, formatDuration } from "../utils/sessionParser";
 import { buildActivityList, getPagesFromEvents, urlPageKey } from "../utils/activityList";
 import { format } from "date-fns";
 import PropertyRow from "./PropertyRow";
+
+function getApiBase() {
+  const base = import.meta.env.VITE_API_BASE_URL;
+  if (base) return base.replace(/\/$/, "");
+  if (typeof window !== "undefined") return window.location.origin;
+  return "";
+}
 
 function CollapsibleSection({ title, defaultOpen = true, children, action }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -87,8 +107,39 @@ function ActivityIcon({ type }) {
   }
 }
 
+const iconSx = { fontSize: 18, color: "text.secondary" };
+
+function DeviceIcon({ device, os }) {
+  if (/Android/i.test(os || "")) return <AndroidIcon sx={iconSx} />;
+  if (/iOS|iPhone|iPad|Mac/i.test(os || "")) return <AppleIcon sx={iconSx} />;
+  switch (device) {
+    case "Mobile":
+      return <PhoneAndroidIcon sx={iconSx} />;
+    case "Tablet":
+      return <TabletIcon sx={iconSx} />;
+    case "Desktop":
+    default:
+      return <DesktopWindowsIcon sx={iconSx} />;
+  }
+}
+
+function OSIcon({ os }) {
+  if (/Android/i.test(os || "")) return <AndroidIcon sx={iconSx} />;
+  if (/iOS|Mac|iPhone|iPad/i.test(os || "")) return <AppleIcon sx={iconSx} />;
+  if (/Windows/i.test(os || "")) return <DesktopWindowsIcon sx={iconSx} />;
+  return <LaptopIcon sx={iconSx} />;
+}
+
+function BrowserIcon() {
+  return <LanguageIcon sx={iconSx} />;
+}
+
 export default function RightPanel({ session, events, meta, onSeek, currentTimeMs, excludedUrls = [], onExcludeUrl, onUnexcludeUrl, onSaveExclusions }) {
+  const navigate = useNavigate();
   const [activitySearch, setActivitySearch] = useState("");
+  const [setupDialogOpen, setSetupDialogOpen] = useState(false);
+  const [allPropertiesDialogOpen, setAllPropertiesDialogOpen] = useState(false);
+  const [setupCopied, setSetupCopied] = useState(false);
 
   const activities = useMemo(() => buildActivityList(events || []), [events]);
   const pages = useMemo(() => getPagesFromEvents(events || []), [events]);
@@ -113,6 +164,50 @@ export default function RightPanel({ session, events, meta, onSeek, currentTimeM
   const device = parseDevice(m.userAgent);
   const os = parseOS(m.userAgent);
   const browser = parseBrowser(m.userAgent);
+
+  const apiBase = getApiBase();
+  const setupSnippet = session.projectKey && apiBase
+    ? `<script src="${apiBase}/quicklook-sdk.js"></script>
+<script>
+  quicklook('init', {
+    apiUrl: '${apiBase}',
+    projectKey: '${session.projectKey}'
+  });
+  // Optional: identify user
+  // quicklook('setIdentity', { email: 'user@example.com', firstName: 'Jane' });
+</script>`
+    : "";
+
+  const copySetupSnippet = () => {
+    if (!setupSnippet) return;
+    navigator.clipboard.writeText(setupSnippet).then(() => {
+      setSetupCopied(true);
+      setTimeout(() => setSetupCopied(false), 2000);
+    });
+  };
+
+  const allPropertiesEntries = useMemo(() => {
+    const entries = [];
+    if (session) {
+      Object.entries(session).forEach(([k, v]) => {
+        if (k === "meta" && v && typeof v === "object") return;
+        const val = v == null ? "—" : (typeof v === "object" ? JSON.stringify(v) : String(v));
+        entries.push({ key: k, value: val });
+      });
+      if (m && typeof m === "object") {
+        Object.entries(m).forEach(([k, v]) => {
+          const val = v == null ? "—" : (typeof v === "object" ? JSON.stringify(v) : String(v));
+          entries.push({ key: `meta.${k}`, value: val });
+        });
+      }
+    }
+    return entries;
+  }, [session, m]);
+
+  const goToAllSessions = (e) => {
+    e?.stopPropagation?.();
+    if (session?.projectKey) navigate(`/projects/${session.projectKey}/sessions`);
+  };
 
   return (
     <Box
@@ -140,7 +235,12 @@ export default function RightPanel({ session, events, meta, onSeek, currentTimeM
         }
       >
         <PropertyRow label="ID" value={session.sessionId?.slice(0, 20) + (session.sessionId?.length > 20 ? "…" : "")} />
-        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+        <Typography
+          component="button"
+          variant="caption"
+          onClick={() => setSetupDialogOpen(true)}
+          sx={{ color: "primary.main", cursor: "pointer", border: 0, background: "none", mt: 0.5, p: 0, textDecoration: "underline", "&:hover": { opacity: 0.9 } }}
+        >
           How to set up
         </Typography>
         <PropertyRow label="Total events" value={String(eventCount)} />
@@ -148,7 +248,8 @@ export default function RightPanel({ session, events, meta, onSeek, currentTimeM
         <Typography
           component="button"
           variant="caption"
-          sx={{ color: "primary.main", cursor: "pointer", border: 0, background: "none", mt: 0.5, p: 0 }}
+          onClick={goToAllSessions}
+          sx={{ color: "primary.main", cursor: "pointer", border: 0, background: "none", mt: 0.5, p: 0, textDecoration: "underline", "&:hover": { opacity: 0.9 } }}
         >
           Show all sessions
         </Typography>
@@ -158,7 +259,7 @@ export default function RightPanel({ session, events, meta, onSeek, currentTimeM
         title="Session properties"
         defaultOpen={true}
         action={
-          <IconButton size="small" title="Show all properties">
+          <IconButton size="small" title="Show all properties" onClick={(e) => { e.stopPropagation(); setAllPropertiesDialogOpen(true); }}>
             <TuneIcon fontSize="small" />
           </IconButton>
         }
@@ -171,9 +272,9 @@ export default function RightPanel({ session, events, meta, onSeek, currentTimeM
               : "—"
           }
         />
-        <PropertyRow label="Device" value={device} />
-        <PropertyRow label="Op. system" value={os} />
-        <PropertyRow label="Browser" value={browser} />
+        <PropertyRow label="Device" value={device} icon={<DeviceIcon device={device} os={os} />} />
+        <PropertyRow label="Op. system" value={os} icon={<OSIcon os={os} />} />
+        <PropertyRow label="Browser" value={browser} icon={<BrowserIcon />} />
         <PropertyRow label="Duration" value={session.duration != null ? formatDuration(session.duration) : "—"} />
         <PropertyRow
           label="Dimensions"
@@ -196,7 +297,8 @@ export default function RightPanel({ session, events, meta, onSeek, currentTimeM
         <Typography
           component="button"
           variant="caption"
-          sx={{ color: "primary.main", cursor: "pointer", border: 0, background: "none", mt: 0.5, p: 0 }}
+          onClick={() => setAllPropertiesDialogOpen(true)}
+          sx={{ color: "primary.main", cursor: "pointer", border: 0, background: "none", mt: 0.5, p: 0, textDecoration: "underline", "&:hover": { opacity: 0.9 } }}
         >
           Show all properties
         </Typography>
@@ -379,6 +481,65 @@ export default function RightPanel({ session, events, meta, onSeek, currentTimeM
           )}
         </CollapsibleSection>
       )}
+
+      <Dialog open={setupDialogOpen} onClose={() => setSetupDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>How to set up</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Add this script to your site to start recording sessions for this project.
+          </Typography>
+          {setupSnippet ? (
+            <Box
+              component="pre"
+              sx={{
+                p: 1.5,
+                bgcolor: "action.hover",
+                borderRadius: 1,
+                overflow: "auto",
+                fontSize: "0.75rem",
+                fontFamily: "monospace",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-all",
+              }}
+            >
+              {setupSnippet}
+            </Box>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              No project key. Open project settings to get the integration script.
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSetupDialogOpen(false)}>Close</Button>
+          {setupSnippet && (
+            <Button startIcon={<ContentCopyIcon />} onClick={copySetupSnippet} variant="contained">
+              {setupCopied ? "Copied!" : "Copy script"}
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={allPropertiesDialogOpen} onClose={() => setAllPropertiesDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>All session properties</DialogTitle>
+        <DialogContent>
+          <List dense disablePadding sx={{ maxHeight: 400, overflow: "auto" }}>
+            {allPropertiesEntries.map(({ key, value }, i) => (
+              <ListItem key={i} disablePadding sx={{ py: 0.5, flexDirection: "column", alignItems: "stretch" }}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.7rem" }}>
+                  {key}
+                </Typography>
+                <Typography variant="body2" sx={{ fontSize: "0.8125rem", wordBreak: "break-all" }} title={value}>
+                  {value}
+                </Typography>
+              </ListItem>
+            ))}
+          </List>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAllPropertiesDialogOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

@@ -94,31 +94,31 @@ export class GcsAdapter {
   async downloadChunks(sessionId) {
     const prefix = `${sessionId}/`;
     const [files] = await this.bucket.getFiles({ prefix });
-    const chunks = [];
-    for (const file of files) {
-      const name = file.name;
-      const match = name.match(/^[^/]+\/chunk-(\d+)\.json\.gz$/);
-      if (!match) continue;
-      const index = parseInt(match[1], 10);
-      const [contents] = await file.download();
-      let events;
-      try {
-        const decompressed = zlib.gunzipSync(contents);
-        events = JSON.parse(decompressed.toString("utf8"));
-      } catch (err) {
-        if (err.message && err.message.includes("incorrect header check")) {
-          events = JSON.parse(contents.toString("utf8"));
-        } else {
-          logger.error("GCS download chunk parse failed", {
-            sessionId: sessionId?.slice(0, 8),
-            index,
-            error: err.message,
-          });
-          throw err;
+    const fileList = files.filter((f) => /^[^/]+\/chunk-(\d+)\.json\.gz$/.test(f.name));
+    const chunks = await Promise.all(
+      fileList.map(async (file) => {
+        const match = file.name.match(/^[^/]+\/chunk-(\d+)\.json\.gz$/);
+        const index = parseInt(match[1], 10);
+        const [contents] = await file.download();
+        let events;
+        try {
+          const decompressed = zlib.gunzipSync(contents);
+          events = JSON.parse(decompressed.toString("utf8"));
+        } catch (err) {
+          if (err.message && err.message.includes("incorrect header check")) {
+            events = JSON.parse(contents.toString("utf8"));
+          } else {
+            logger.error("GCS download chunk parse failed", {
+              sessionId: sessionId?.slice(0, 8),
+              index,
+              error: err.message,
+            });
+            throw err;
+          }
         }
-      }
-      chunks.push({ index, events });
-    }
+        return { index, events };
+      })
+    );
     chunks.sort((a, b) => a.index - b.index);
     logger.debug("GCS download", {
       bucket: this.bucketName,
