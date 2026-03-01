@@ -8,7 +8,7 @@ import cors from "cors";
 import fs from "fs";
 import quicklookRoutes from "./routes/quicklookRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
-import { startQuicklookRetentionJob } from "./jobs/quicklookRetention.js";
+import { startQuicklookRetentionJob, startAutoCloseInactiveSessionsJob } from "./jobs/quicklookRetention.js";
 import logger from "./configs/loggingConfig.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -44,4 +44,5 @@ const PORT = process.env.PORT || 3080;
 app.listen(PORT, () => {
   logger.info(`Quicklook server listening on port ${PORT}`);
   startQuicklookRetentionJob();
+  startAutoCloseInactiveSessionsJob();
 });

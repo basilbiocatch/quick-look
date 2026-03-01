@@ -5,6 +5,8 @@ import QuicklookProject from "../models/quicklookProjectModel.js";
 import { generateId, generateApiKey } from "../models/quicklookProjectModel.js";
 import { getRealClientIP } from "../utils/getRealClientIP.js";
 import { getGeoFromIP } from "../utils/geoFromIP.js";
+import { getRetentionDaysByPlan } from "../utils/retentionConfig.js";
+import User from "../models/userModel.js";
 import logger from "../configs/loggingConfig.js";
 
 /** If project not found or not owned by userId, returns response and null; else returns project. */
@@ -24,20 +26,25 @@ async function getProjectForUser(projectKey, userId, res) {
 export const startSession = async (req, res) => {
   try {
     const ipAddress = getRealClientIP(req);
-    const { projectKey, meta, user, retentionDays } = req.body || {};
+    const { projectKey, meta, user, attributes, parentSessionId, sessionChainId, sequenceNumber, splitReason } = req.body || {};
     if (!projectKey || typeof projectKey !== "string") {
       return res.status(200).json({ success: false, error: "projectKey required" });
     }
+    // retentionDays is now set automatically from project's plan-based retention
     const geo = ipAddress ? await getGeoFromIP(ipAddress) : null;
-    const { sessionId } = await QuicklookService.startSession({
+    const result = await QuicklookService.startSession({
       projectKey,
       meta,
       user,
       ipAddress,
-      retentionDays,
       geo,
+      attributes,
+      parentSessionId,
+      sessionChainId,
+      sequenceNumber,
+      splitReason,
     });
-    return res.status(200).json({ success: true, sessionId });
+    return res.status(200).json({ success: true, ...result });
   } catch (err) {
     logger.error("quicklook startSession", { error: err.message });
     if (err.message === "Session limit reached") {
@@ -137,7 +144,7 @@ export const getProjects = async (req, res) => {
   try {
     const projects = await QuicklookProject.find({ owner: req.user.userId })
       .sort({ createdAt: -1 })
-      .select("projectId projectKey name allowedDomains retentionDays createdAt updatedAt")
+      .select("projectId projectKey name allowedDomains excludedUrls retentionDays createdAt updatedAt")
       .lean();
     return res.json({ success: true, data: projects });
   } catch (err) {
@@ -146,12 +153,100 @@ export const getProjects = async (req, res) => {
   }
 };
 
+/** Public: returns project config for SDK (excludedUrls). No auth. */
+export const getProjectConfig = async (req, res) => {
+  try {
+    const { projectKey } = req.params;
+    if (!projectKey) {
+      return res.status(400).json({ success: false, error: "projectKey required" });
+    }
+    const project = await QuicklookProject.findOne({ projectKey }).select("excludedUrls").lean();
+    if (!project) {
+      return res.status(404).json({ success: false, error: "Project not found" });
+    }
+    return res.json({
+      success: true,
+      excludedUrls: Array.isArray(project.excludedUrls) ? project.excludedUrls : [],
+    });
+  } catch (err) {
+    logger.error("quicklook getProjectConfig", { error: err.message });
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+/** Auth: get single project for settings. */
+export const getProject = async (req, res) => {
+  try {
+    const { projectKey } = req.params;
+    const project = await getProjectForUser(projectKey, req.user.userId, res);
+    if (!project) return;
+    return res.json({
+      success: true,
+      data: {
+        projectId: project.projectId,
+        projectKey: project.projectKey,
+        name: project.name,
+        allowedDomains: project.allowedDomains || [],
+        excludedUrls: project.excludedUrls || [],
+        retentionDays: project.retentionDays,
+        createdAt: project.createdAt,
+        updatedAt: project.updatedAt,
+      },
+    });
+  } catch (err) {
+    logger.error("quicklook getProject", { error: err.message });
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+/** Auth: update project (excludedUrls, name, allowedDomains). Retention is set automatically based on plan. */
+export const updateProject = async (req, res) => {
+  try {
+    const { projectKey } = req.params;
+    const project = await getProjectForUser(projectKey, req.user.userId, res);
+    if (!project) return;
+    const { name, allowedDomains, excludedUrls } = req.body || {};
+    const update = { updatedAt: new Date() };
+    if (typeof name === "string" && name.trim()) update.name = name.trim();
+    if (Array.isArray(allowedDomains)) {
+      update.allowedDomains = allowedDomains.map((d) => String(d).trim()).filter(Boolean);
+    }
+    if (Array.isArray(excludedUrls)) {
+      update.excludedUrls = excludedUrls.map((u) => String(u).trim()).filter(Boolean);
+    }
+    // Note: retentionDays is not updatable - it's set automatically based on user's plan
+    await QuicklookProject.updateOne({ projectKey }, { $set: update });
+    const updated = await QuicklookProject.findOne({ projectKey }).lean();
+    return res.json({
+      success: true,
+      data: {
+        projectId: updated.projectId,
+        projectKey: updated.projectKey,
+        name: updated.name,
+        allowedDomains: updated.allowedDomains || [],
+        excludedUrls: updated.excludedUrls || [],
+        retentionDays: updated.retentionDays,
+        createdAt: updated.createdAt,
+        updatedAt: updated.updatedAt,
+      },
+    });
+  } catch (err) {
+    logger.error("quicklook updateProject", { error: err.message });
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};
+
 export const createProject = async (req, res) => {
   try {
-    const { name, allowedDomains, retentionDays } = req.body || {};
+    const { name, allowedDomains } = req.body || {};
     if (!name || typeof name !== "string" || !name.trim()) {
       return res.status(400).json({ success: false, error: "name is required" });
     }
+    // Get user's plan to determine retention days
+    const user = await User.findById(req.user.userId).select("plan").lean();
+    const userPlan = user?.plan || "free";
+    const retentionDays = getRetentionDaysByPlan(userPlan);
+    
     const projectId = generateId();
     const projectKey = generateId();
     const apiKey = generateApiKey();
@@ -164,7 +259,7 @@ export const createProject = async (req, res) => {
       name: name.trim(),
       owner: req.user.userId,
       apiKey,
-      retentionDays: typeof retentionDays === "number" && retentionDays > 0 ? retentionDays : 30,
+      retentionDays,
       allowedDomains: domains,
     });
     await project.save();
@@ -184,6 +279,23 @@ export const createProject = async (req, res) => {
     });
   } catch (err) {
     logger.error("quicklook createProject", { error: err.message });
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+export const deleteProject = async (req, res) => {
+  try {
+    const { projectKey } = req.params;
+    const project = await getProjectForUser(projectKey, req.user.userId, res);
+    if (!project) return;
+    const result = await QuicklookService.deleteProject(projectKey);
+    return res.json({
+      success: true,
+      message: "Project and all associated data deleted successfully",
+      deletedCounts: result,
+    });
+  } catch (err) {
+    logger.error("quicklook deleteProject", { error: err.message });
     return res.status(500).json({ success: false, error: err.message });
   }
 };

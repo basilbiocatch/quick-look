@@ -8,6 +8,7 @@ const userSchema = new mongoose.Schema(
     email: { type: String, required: true, unique: true, index: true, trim: true, lowercase: true },
     passwordHash: { type: String, required: true },
     name: { type: String, default: "", trim: true },
+    plan: { type: String, enum: ["free", "standard", "premium", "enterprise"], default: "free", index: true },
     sessionCap: { type: Number, default: null },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },

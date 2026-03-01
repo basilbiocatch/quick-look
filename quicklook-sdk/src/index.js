@@ -1,5 +1,6 @@
 import { setupQueue } from "./shim.js";
 import { createQuicklook } from "./init.js";
+import { getSessionId } from "./session.js";
 
 const api = createQuicklook();
 
@@ -26,6 +27,13 @@ if (typeof window !== "undefined") {
   const prevQ = (prev && prev.q) || [];
   window.quicklook = quicklookGlobal;
   window.quicklook.q = prevQ;
+  Object.defineProperty(window.quicklook, "sessionId", {
+    get() {
+      return getSessionId();
+    },
+    configurable: true,
+    enumerable: true,
+  });
   quicklookGlobal();
 }
 

@@ -11,10 +11,15 @@ import {
   StepLabel,
   Alert,
   IconButton,
-  InputAdornment,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
 } from "@mui/material";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import AddIcon from "@mui/icons-material/Add";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import { createProject } from "../api/quicklookApi";
 
 const steps = ["Project details", "Integration"];
@@ -30,17 +35,23 @@ export default function NewProjectPage() {
   const navigate = useNavigate();
   const [activeStep, setActiveStep] = useState(0);
   const [name, setName] = useState("");
-  const [allowedDomainsText, setAllowedDomainsText] = useState("");
-  const [retentionDays, setRetentionDays] = useState(30);
+  const [allowedDomains, setAllowedDomains] = useState([]);
+  const [newDomain, setNewDomain] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [createdProject, setCreatedProject] = useState(null);
   const [copied, setCopied] = useState(false);
 
-  const domains = allowedDomainsText
-    .split(/[\n,]/)
-    .map((d) => d.trim())
-    .filter(Boolean);
+  const handleAddDomain = () => {
+    const v = newDomain.trim();
+    if (!v || allowedDomains.includes(v)) return;
+    setAllowedDomains((prev) => [...prev, v]);
+    setNewDomain("");
+  };
+
+  const handleRemoveDomain = (index) => {
+    setAllowedDomains((prev) => prev.filter((_, i) => i !== index));
+  };
 
   const handleNext = async () => {
     setError("");
@@ -53,8 +64,7 @@ export default function NewProjectPage() {
       try {
         const res = await createProject({
           name: name.trim(),
-          allowedDomains: domains,
-          retentionDays: Number(retentionDays) || 30,
+          allowedDomains,
         });
         const data = res.data?.data;
         if (data) {
@@ -146,26 +156,43 @@ export default function NewProjectPage() {
               placeholder="My app"
               sx={{ mb: 2 }}
             />
-            <TextField
-              fullWidth
-              label="Allowed domains"
-              placeholder="one per line or comma-separated"
-              value={allowedDomainsText}
-              onChange={(e) => setAllowedDomainsText(e.target.value)}
-              multiline
-              rows={3}
-              helperText="Domains that can send recordings (e.g. app.example.com). Leave empty to allow any."
-              sx={{ mb: 2 }}
-            />
-            <TextField
-              fullWidth
-              label="Retention (days)"
-              type="number"
-              inputProps={{ min: 1, max: 365 }}
-              value={retentionDays}
-              onChange={(e) => setRetentionDays(e.target.value)}
-              sx={{ mb: 2 }}
-            />
+            <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.5 }}>
+              Allowed domains
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Add domains that may send recordings. Leave empty to allow any origin.
+            </Typography>
+            <Box sx={{ display: "flex", gap: 1, mb: 1 }}>
+              <TextField
+                size="small"
+                fullWidth
+                placeholder="e.g. app.example.com"
+                value={newDomain}
+                onChange={(e) => setNewDomain(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddDomain())}
+              />
+              <Button variant="outlined" startIcon={<AddIcon />} onClick={handleAddDomain} disabled={!newDomain.trim()} sx={{ flexShrink: 0 }} aria-label="Add domain">
+                Add
+              </Button>
+            </Box>
+            {allowedDomains.length > 0 ? (
+              <List dense sx={{ bgcolor: "action.hover", borderRadius: 1, mb: 2 }}>
+                {allowedDomains.map((domain, index) => (
+                  <ListItem key={`${domain}-${index}`}>
+                    <ListItemText primary={domain} primaryTypographyProps={{ variant: "body2", fontFamily: "monospace" }} />
+                    <ListItemSecondaryAction>
+                      <IconButton size="small" onClick={() => handleRemoveDomain(index)} aria-label="Remove domain">
+                        <DeleteOutlineIcon fontSize="small" />
+                      </IconButton>
+                    </ListItemSecondaryAction>
+                  </ListItem>
+                ))}
+              </List>
+            ) : (
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                No domains added. Any origin can send recordings.
+              </Typography>
+            )}
             <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 1, mt: 3 }}>
               <Button onClick={handleBack}>Cancel</Button>
               <Button variant="contained" onClick={handleNext} disabled={submitting}>

@@ -1,51 +1,25 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import {
   Box,
   Typography,
-  TextField,
   ListItemButton,
   ListItemText,
-  InputAdornment,
-  CircularProgress,
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
-import SearchIcon from "@mui/icons-material/Search";
-import AddIcon from "@mui/icons-material/Add";
 import CheckIcon from "@mui/icons-material/Check";
-import FolderIcon from "@mui/icons-material/Folder";
-import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import RadioButtonCheckedIcon from "@mui/icons-material/RadioButtonChecked";
-import AllInboxIcon from "@mui/icons-material/AllInbox";
+import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import HomeIcon from "@mui/icons-material/Home";
-import { getProjects } from "../api/quicklookApi";
 
 const segmentOptions = [
-  { value: "closed", label: "Completed sessions", Icon: CheckIcon },
+  { value: "closed", label: "Completed sessions", Icon: CheckCircleOutlineIcon },
   { value: "active", label: "Active sessions", Icon: RadioButtonCheckedIcon },
-  { value: "", label: "All sessions", Icon: AllInboxIcon },
+  { value: "", label: "All sessions", Icon: AutoAwesomeIcon },
 ];
 
-export default function SessionSidebar({ projectKey, status, setStatus, onOpenFilterPanel }) {
+export default function SessionSidebar({ status, setStatus }) {
   const navigate = useNavigate();
-  const [projects, setProjects] = useState([]);
-  const [projectsLoading, setProjectsLoading] = useState(true);
-  const [segmentSearch, setSegmentSearch] = useState("");
-
-  useEffect(() => {
-    let cancelled = false;
-    setProjectsLoading(true);
-    getProjects()
-      .then((res) => {
-        if (!cancelled && res.data?.data) setProjects(res.data.data);
-      })
-      .catch(() => {
-        if (!cancelled) setProjects([]);
-      })
-      .finally(() => {
-        if (!cancelled) setProjectsLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, []);
 
   return (
     <Box
@@ -62,7 +36,7 @@ export default function SessionSidebar({ projectKey, status, setStatus, onOpenFi
       }}
     >
       <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 2.5, pt: 2.5, pb: 1 }}>
-        <img src="/logo.png" alt="" style={{ height: 24, width: 24, display: "block", flexShrink: 0 }} />
+        {/* <img src="/logo.png" alt="" style={{ height: 24, width: 24, display: "block", flexShrink: 0 }} /> */}
         <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1rem" }}>
           Quicklook
         </Typography>
@@ -73,27 +47,11 @@ export default function SessionSidebar({ projectKey, status, setStatus, onOpenFi
 
       <ListItemButton
         onClick={() => navigate("/")}
-        sx={{ borderRadius: "6px", mx: 1.5, py: 0.5, maxHeight: 45,marginBottom:1 }}
+        sx={{ borderRadius: "6px", mx: 1.5, py: 0.5, maxHeight: 45, marginBottom: 1 }}
       >
         <HomeIcon sx={{ fontSize: 16, mr: 1, color: "text.secondary" }} />
         <ListItemText primary="Back to dashboard" primaryTypographyProps={{ variant: "body2", sx: { fontSize: "0.8125rem", color: "text.secondary" } }} />
       </ListItemButton>
-
-      <TextField
-        size="small"
-        placeholder="Search for segments"
-        value={segmentSearch}
-        onChange={(e) => setSegmentSearch(e.target.value)}
-        sx={{ mx: 2, mb: 2 }}
-        InputProps={{
-          startAdornment: (
-            <InputAdornment position="start" sx={{ ml: 0.5 }}>
-              <SearchIcon sx={{ fontSize: 18, color: "text.secondary" }} />
-            </InputAdornment>
-          ),
-          sx: { fontSize: "0.875rem", height: 36, "& fieldset": { borderRadius: "6px" } },
-        }}
-      />
 
       <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ px: 2.5, pb: 0.75, fontSize: "0.625rem", letterSpacing: "0.08em" }}>
         DEFAULT SEGMENTS
@@ -108,7 +66,15 @@ export default function SessionSidebar({ projectKey, status, setStatus, onOpenFi
               borderRadius: "6px",
               py: 0,
               minHeight: 36,
-              "&.Mui-selected": { bgcolor: "primary.main", color: "primary.contrastText", "&:hover": { bgcolor: "primary.dark" } },
+              transition: "background 0.25s ease, box-shadow 0.25s ease",
+              "&.Mui-selected": {
+                background: "linear-gradient(135deg, rgba(190,149,250,0.45) 0%, rgba(190,149,250,0.25) 50%, rgba(147,112,219,0.35) 100%)",
+                color: "#fff",
+                boxShadow: "0 0 0 1px rgba(190,149,250,0.3)",
+                "&:hover": { background: "linear-gradient(135deg, rgba(190,149,250,0.55) 0%, rgba(190,149,250,0.35) 100%)", color: "#fff" },
+                "& .MuiListItemText-primary": { color: "#fff" },
+                "& .MuiSvgIcon-root": { color: "#fff" },
+              },
             }}
           >
             {status === value && <CheckIcon sx={{ fontSize: 18, mr: 1.25 }} />}
@@ -118,42 +84,7 @@ export default function SessionSidebar({ projectKey, status, setStatus, onOpenFi
         ))}
       </Box>
 
-      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2.5, pt: 2, pb: 0.75 }}>
-        <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ fontSize: "0.625rem", letterSpacing: "0.08em" }}>
-          PROJECTS
-        </Typography>
-        <ChevronRightIcon sx={{ fontSize: 16, color: "text.secondary", transform: "rotate(-90deg)" }} />
-      </Box>
-      <Box sx={{ px: 1.5, flex: 1, minHeight: 0, overflow: "auto" }}>
-        <ListItemButton onClick={() => navigate("/projects/new")} sx={{ borderRadius: "6px", py: 0, minHeight: 32 }}>
-          <AddIcon sx={{ fontSize: 16, mr: 1.25, color: "text.secondary" }} />
-          <ListItemText primary="Add project" primaryTypographyProps={{ variant: "body2", sx: { fontSize: "0.8125rem", color: "text.secondary" } }} />
-        </ListItemButton>
-        {projectsLoading ? (
-          <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
-            <CircularProgress size={24} />
-          </Box>
-        ) : (
-          projects.map((project) => (
-            <ListItemButton
-              key={project.projectKey}
-              selected={projectKey === project.projectKey}
-              onClick={() => navigate(`/projects/${project.projectKey}/sessions`)}
-              sx={{ borderRadius: "6px", py: 0, minHeight: 36 }}
-            >
-              {projectKey === project.projectKey && <CheckIcon fontSize="small" color="primary" sx={{ mr: 1.25 }} />}
-              <FolderIcon sx={{ fontSize: 18, mr: 1.25, color: "text.secondary" }} />
-              <ListItemText
-                primary={project.name}
-                secondary={project.projectKey}
-                primaryTypographyProps={{ variant: "body2", sx: { fontSize: "0.875rem" } }}
-                secondaryTypographyProps={{ noWrap: true, sx: { fontSize: "0.6875rem" } }}
-              />
-            </ListItemButton>
-          ))
-        )}
-      </Box>
-
+      <Box sx={{ flex: 1, minHeight: 0 }} />
       <Box sx={{ p: 1.5, borderTop: "1px solid", borderColor: "divider" }} />
     </Box>
   );

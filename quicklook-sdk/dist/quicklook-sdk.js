@@ -93,12 +93,13 @@
   // src/collectors/network.js
   var pushEvent2;
   var apiBase = "";
-  var BLOCKLIST = ["quicklook", "sessions/start", "sessions/", "/chunk", "/end"];
+  var BLOCKLIST = ["/api/quicklook/", "quicklook", "sessions/start", "sessions/", "/chunk", "/end"];
   function isQuicklookUrl(url) {
     if (!url || !apiBase) return false;
     try {
       const u = typeof url === "string" ? url : url.toString();
-      return BLOCKLIST.some((p) => u.includes(p)) || u.startsWith(apiBase);
+      if (u.startsWith(apiBase)) return true;
+      return BLOCKLIST.some((p) => u.includes(p));
     } catch {
       return false;
     }
@@ -121,7 +122,9 @@
     const origFetch = window.fetch;
     window.fetch = function(input2, init2) {
       const url = typeof input2 === "string" ? input2 : input2?.url;
-      if (isQuicklookUrl(url)) return origFetch.apply(this, arguments);
+      if (isQuicklookUrl(url)) {
+        return origFetch.apply(this, arguments);
+      }
       const start = Date.now();
       return origFetch.apply(this, arguments).then(
         (res) => {
@@ -187,13 +190,23 @@
 
   // src/session.js
   var STORAGE_KEY = "quicklook_sid";
+  var STORAGE_CHAIN_KEY = "quicklook_chain_id";
+  var STORAGE_START_TIME_KEY = "quicklook_start_time";
   var sessionId = null;
   var apiUrl = "";
   var projectKey = "";
   var meta = null;
   var user = null;
   var retentionDays = 30;
+  var attributes = null;
+  var excludedUrls = [];
+  var includedUrls = null;
   var started = false;
+  var sessionStartTime = null;
+  var maxSessionDuration = 60 * 60 * 1e3;
+  var sessionChainId = null;
+  var parentSessionId = null;
+  var sequenceNumber = 1;
   var startPromise = null;
   function getStoredSessionId() {
     try {
@@ -209,6 +222,48 @@
     } catch (_) {
     }
   }
+  function getStoredChainId() {
+    try {
+      if (typeof sessionStorage === "undefined") return null;
+      return sessionStorage.getItem(STORAGE_CHAIN_KEY);
+    } catch {
+      return null;
+    }
+  }
+  function setStoredChainId(id) {
+    try {
+      if (typeof sessionStorage !== "undefined" && id) sessionStorage.setItem(STORAGE_CHAIN_KEY, id);
+    } catch (_) {
+    }
+  }
+  function getStoredStartTime() {
+    try {
+      if (typeof sessionStorage === "undefined") return null;
+      const stored = sessionStorage.getItem(STORAGE_START_TIME_KEY);
+      return stored ? parseInt(stored, 10) : null;
+    } catch {
+      return null;
+    }
+  }
+  function setStoredStartTime(time) {
+    try {
+      if (typeof sessionStorage !== "undefined" && time) {
+        sessionStorage.setItem(STORAGE_START_TIME_KEY, String(time));
+      }
+    } catch (_) {
+    }
+  }
+  function clearSessionStorage() {
+    try {
+      if (typeof sessionStorage !== "undefined") {
+        sessionStorage.removeItem(STORAGE_KEY);
+        sessionStorage.removeItem(STORAGE_CHAIN_KEY);
+        sessionStorage.removeItem(STORAGE_START_TIME_KEY);
+        sessionStorage.removeItem("quicklook_chunk_index");
+      }
+    } catch (_) {
+    }
+  }
   function getSessionId() {
     return sessionId;
   }
@@ -221,25 +276,63 @@
     if (config.meta) meta = config.meta;
     if (config.user != null) user = config.user;
     if (config.retentionDays != null) retentionDays = config.retentionDays;
+    if (config.attributes !== void 0) attributes = config.attributes;
+    if (config.excludedUrls !== void 0) excludedUrls = Array.isArray(config.excludedUrls) ? config.excludedUrls : [];
+    if (config.includedUrls !== void 0) {
+      includedUrls = Array.isArray(config.includedUrls) && config.includedUrls.length > 0 ? config.includedUrls : null;
+    }
+    if (config.maxSessionDuration !== void 0) {
+      maxSessionDuration = config.maxSessionDuration;
+    }
   }
-  async function startSession() {
-    if (started && sessionId) return sessionId;
+  function shouldRotateSession() {
+    if (!sessionStartTime || !sessionId || maxSessionDuration <= 0) {
+      return false;
+    }
+    const elapsed = Date.now() - sessionStartTime;
+    return elapsed >= maxSessionDuration;
+  }
+  function isPageExcluded(url) {
+    if (!url || typeof url !== "string") return false;
+    if (excludedUrls && excludedUrls.length > 0 && excludedUrls.some((p) => p && url.includes(p))) return true;
+    if (includedUrls && includedUrls.length > 0) {
+      return !includedUrls.some((pattern) => pattern && url.includes(pattern));
+    }
+    return false;
+  }
+  async function startSession(rotationOptions = null) {
+    if (started && sessionId && !rotationOptions) return sessionId;
     if (!apiUrl || !projectKey) return sessionId;
     const stored = getStoredSessionId();
-    if (stored && typeof stored === "string" && stored.length > 0) {
+    const storedStartTime = getStoredStartTime();
+    if (stored && typeof stored === "string" && stored.length > 0 && !rotationOptions) {
       sessionId = stored;
       started = true;
+      sessionStartTime = storedStartTime || Date.now();
+      sessionChainId = getStoredChainId();
       return sessionId;
     }
-    if (startPromise) return startPromise;
+    if (startPromise) {
+      return startPromise;
+    }
     startPromise = (async () => {
       try {
-        const body = JSON.stringify({
+        const payload = {
           projectKey,
           meta: meta || {},
           user: user || {},
           retentionDays
-        });
+        };
+        if (attributes != null && typeof attributes === "object" && !Array.isArray(attributes)) {
+          payload.attributes = attributes;
+        }
+        if (rotationOptions) {
+          payload.parentSessionId = rotationOptions.parentSessionId;
+          payload.sessionChainId = rotationOptions.sessionChainId;
+          payload.sequenceNumber = rotationOptions.sequenceNumber;
+          payload.splitReason = rotationOptions.splitReason || "duration_limit";
+        }
+        const body = JSON.stringify(payload);
         const res = await fetch(`${apiUrl}/api/quicklook/sessions/start`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -250,18 +343,27 @@
         try {
           data = await res.json();
         } catch (e) {
-          console.warn("[quicklook] startSession: invalid JSON response", e);
           return sessionId;
         }
         if (data && data.success !== false && data.sessionId) {
           sessionId = data.sessionId;
           started = true;
+          sessionStartTime = Date.now();
           setStoredSessionId(sessionId);
-        } else if (data && data.success === false) {
-          console.warn("[quicklook] startSession failed:", data.error || "unknown");
+          setStoredStartTime(sessionStartTime);
+          if (data.sessionChainId) {
+            sessionChainId = data.sessionChainId;
+            setStoredChainId(sessionChainId);
+          } else if (rotationOptions && rotationOptions.sessionChainId) {
+            sessionChainId = rotationOptions.sessionChainId;
+            setStoredChainId(sessionChainId);
+          }
+          if (rotationOptions) {
+            parentSessionId = rotationOptions.parentSessionId;
+            sequenceNumber = rotationOptions.sequenceNumber;
+          }
         }
       } catch (e) {
-        console.warn("[quicklook] startSession failed", e);
       } finally {
         startPromise = null;
       }
@@ -269,20 +371,33 @@
     })();
     return startPromise;
   }
-  function endSession(payload) {
+  async function rotateSession(reason = "duration_limit") {
+    if (!sessionId) return null;
+    const oldSessionId = sessionId;
+    const oldChainId = sessionChainId || oldSessionId;
+    const newSequence = sequenceNumber + 1;
+    sessionId = null;
+    started = false;
+    parentSessionId = oldSessionId;
+    sequenceNumber = newSequence;
+    sessionChainId = oldChainId;
+    await startSession({
+      parentSessionId: oldSessionId,
+      sessionChainId: oldChainId,
+      sequenceNumber: newSequence,
+      splitReason: reason
+    });
+    return { oldSessionId, newSessionId: sessionId, sessionChainId: oldChainId, sequenceNumber: newSequence };
+  }
+  function endSession(payload, { clearStorage = false } = {}) {
     if (!sessionId || !apiUrl) return;
     try {
       const body = JSON.stringify(payload || { status: "close" });
       navigator.sendBeacon(`${apiUrl}/api/quicklook/sessions/${sessionId}/end`, body);
-      try {
-        if (typeof sessionStorage !== "undefined") {
-          sessionStorage.removeItem(STORAGE_KEY);
-          sessionStorage.removeItem("quicklook_chunk_index");
-        }
-      } catch (_) {
+      if (clearStorage) {
+        clearSessionStorage();
       }
     } catch (e) {
-      console.warn("[quicklook] endSession beacon failed", e);
     }
   }
 
@@ -1236,7 +1351,7 @@
       }
     } while (s.lookahead < MIN_LOOKAHEAD && s.strm.avail_in !== 0);
   };
-  var deflate_stored = (s, flush) => {
+  var deflate_stored = (s, flush2) => {
     let min_block = s.pending_buf_size - 5 > s.w_size ? s.w_size : s.pending_buf_size - 5;
     let len, left, have, last = 0;
     let used = s.strm.avail_in;
@@ -1254,10 +1369,10 @@
       if (len > have) {
         len = have;
       }
-      if (len < min_block && (len === 0 && flush !== Z_FINISH$3 || flush === Z_NO_FLUSH$2 || len !== left + s.strm.avail_in)) {
+      if (len < min_block && (len === 0 && flush2 !== Z_FINISH$3 || flush2 === Z_NO_FLUSH$2 || len !== left + s.strm.avail_in)) {
         break;
       }
-      last = flush === Z_FINISH$3 && len === left + s.strm.avail_in ? 1 : 0;
+      last = flush2 === Z_FINISH$3 && len === left + s.strm.avail_in ? 1 : 0;
       _tr_stored_block(s, 0, 0, last);
       s.pending_buf[s.pending - 4] = len;
       s.pending_buf[s.pending - 3] = len >> 8;
@@ -1312,7 +1427,7 @@
     if (last) {
       return BS_FINISH_DONE;
     }
-    if (flush !== Z_NO_FLUSH$2 && flush !== Z_FINISH$3 && s.strm.avail_in === 0 && s.strstart === s.block_start) {
+    if (flush2 !== Z_NO_FLUSH$2 && flush2 !== Z_FINISH$3 && s.strm.avail_in === 0 && s.strstart === s.block_start) {
       return BS_BLOCK_DONE;
     }
     have = s.window_size - s.strstart;
@@ -1343,22 +1458,22 @@
     have = s.pending_buf_size - have > 65535 ? 65535 : s.pending_buf_size - have;
     min_block = have > s.w_size ? s.w_size : have;
     left = s.strstart - s.block_start;
-    if (left >= min_block || (left || flush === Z_FINISH$3) && flush !== Z_NO_FLUSH$2 && s.strm.avail_in === 0 && left <= have) {
+    if (left >= min_block || (left || flush2 === Z_FINISH$3) && flush2 !== Z_NO_FLUSH$2 && s.strm.avail_in === 0 && left <= have) {
       len = left > have ? have : left;
-      last = flush === Z_FINISH$3 && s.strm.avail_in === 0 && len === left ? 1 : 0;
+      last = flush2 === Z_FINISH$3 && s.strm.avail_in === 0 && len === left ? 1 : 0;
       _tr_stored_block(s, s.block_start, len, last);
       s.block_start += len;
       flush_pending(s.strm);
     }
     return last ? BS_FINISH_STARTED : BS_NEED_MORE;
   };
-  var deflate_fast = (s, flush) => {
+  var deflate_fast = (s, flush2) => {
     let hash_head;
     let bflush;
     for (; ; ) {
       if (s.lookahead < MIN_LOOKAHEAD) {
         fill_window(s);
-        if (s.lookahead < MIN_LOOKAHEAD && flush === Z_NO_FLUSH$2) {
+        if (s.lookahead < MIN_LOOKAHEAD && flush2 === Z_NO_FLUSH$2) {
           return BS_NEED_MORE;
         }
         if (s.lookahead === 0) {
@@ -1405,7 +1520,7 @@
       }
     }
     s.insert = s.strstart < MIN_MATCH - 1 ? s.strstart : MIN_MATCH - 1;
-    if (flush === Z_FINISH$3) {
+    if (flush2 === Z_FINISH$3) {
       flush_block_only(s, true);
       if (s.strm.avail_out === 0) {
         return BS_FINISH_STARTED;
@@ -1420,14 +1535,14 @@
     }
     return BS_BLOCK_DONE;
   };
-  var deflate_slow = (s, flush) => {
+  var deflate_slow = (s, flush2) => {
     let hash_head;
     let bflush;
     let max_insert;
     for (; ; ) {
       if (s.lookahead < MIN_LOOKAHEAD) {
         fill_window(s);
-        if (s.lookahead < MIN_LOOKAHEAD && flush === Z_NO_FLUSH$2) {
+        if (s.lookahead < MIN_LOOKAHEAD && flush2 === Z_NO_FLUSH$2) {
           return BS_NEED_MORE;
         }
         if (s.lookahead === 0) {
@@ -1491,7 +1606,7 @@
       s.match_available = 0;
     }
     s.insert = s.strstart < MIN_MATCH - 1 ? s.strstart : MIN_MATCH - 1;
-    if (flush === Z_FINISH$3) {
+    if (flush2 === Z_FINISH$3) {
       flush_block_only(s, true);
       if (s.strm.avail_out === 0) {
         return BS_FINISH_STARTED;
@@ -1506,7 +1621,7 @@
     }
     return BS_BLOCK_DONE;
   };
-  var deflate_rle = (s, flush) => {
+  var deflate_rle = (s, flush2) => {
     let bflush;
     let prev;
     let scan, strend;
@@ -1514,7 +1629,7 @@
     for (; ; ) {
       if (s.lookahead <= MAX_MATCH) {
         fill_window(s);
-        if (s.lookahead <= MAX_MATCH && flush === Z_NO_FLUSH$2) {
+        if (s.lookahead <= MAX_MATCH && flush2 === Z_NO_FLUSH$2) {
           return BS_NEED_MORE;
         }
         if (s.lookahead === 0) {
@@ -1553,7 +1668,7 @@
       }
     }
     s.insert = 0;
-    if (flush === Z_FINISH$3) {
+    if (flush2 === Z_FINISH$3) {
       flush_block_only(s, true);
       if (s.strm.avail_out === 0) {
         return BS_FINISH_STARTED;
@@ -1568,13 +1683,13 @@
     }
     return BS_BLOCK_DONE;
   };
-  var deflate_huff = (s, flush) => {
+  var deflate_huff = (s, flush2) => {
     let bflush;
     for (; ; ) {
       if (s.lookahead === 0) {
         fill_window(s);
         if (s.lookahead === 0) {
-          if (flush === Z_NO_FLUSH$2) {
+          if (flush2 === Z_NO_FLUSH$2) {
             return BS_NEED_MORE;
           }
           break;
@@ -1592,7 +1707,7 @@
       }
     }
     s.insert = 0;
-    if (flush === Z_FINISH$3) {
+    if (flush2 === Z_FINISH$3) {
       flush_block_only(s, true);
       if (s.strm.avail_out === 0) {
         return BS_FINISH_STARTED;
@@ -1815,23 +1930,23 @@
   var deflateInit = (strm, level) => {
     return deflateInit2(strm, level, Z_DEFLATED$2, MAX_WBITS$1, DEF_MEM_LEVEL, Z_DEFAULT_STRATEGY$1);
   };
-  var deflate$2 = (strm, flush) => {
-    if (deflateStateCheck(strm) || flush > Z_BLOCK$1 || flush < 0) {
+  var deflate$2 = (strm, flush2) => {
+    if (deflateStateCheck(strm) || flush2 > Z_BLOCK$1 || flush2 < 0) {
       return strm ? err(strm, Z_STREAM_ERROR$2) : Z_STREAM_ERROR$2;
     }
     const s = strm.state;
-    if (!strm.output || strm.avail_in !== 0 && !strm.input || s.status === FINISH_STATE && flush !== Z_FINISH$3) {
+    if (!strm.output || strm.avail_in !== 0 && !strm.input || s.status === FINISH_STATE && flush2 !== Z_FINISH$3) {
       return err(strm, strm.avail_out === 0 ? Z_BUF_ERROR$1 : Z_STREAM_ERROR$2);
     }
     const old_flush = s.last_flush;
-    s.last_flush = flush;
+    s.last_flush = flush2;
     if (s.pending !== 0) {
       flush_pending(strm);
       if (strm.avail_out === 0) {
         s.last_flush = -1;
         return Z_OK$3;
       }
-    } else if (strm.avail_in === 0 && rank(flush) <= rank(old_flush) && flush !== Z_FINISH$3) {
+    } else if (strm.avail_in === 0 && rank(flush2) <= rank(old_flush) && flush2 !== Z_FINISH$3) {
       return err(strm, Z_BUF_ERROR$1);
     }
     if (s.status === FINISH_STATE && strm.avail_in !== 0) {
@@ -2020,8 +2135,8 @@
         return Z_OK$3;
       }
     }
-    if (strm.avail_in !== 0 || s.lookahead !== 0 || flush !== Z_NO_FLUSH$2 && s.status !== FINISH_STATE) {
-      let bstate = s.level === 0 ? deflate_stored(s, flush) : s.strategy === Z_HUFFMAN_ONLY ? deflate_huff(s, flush) : s.strategy === Z_RLE ? deflate_rle(s, flush) : configuration_table[s.level].func(s, flush);
+    if (strm.avail_in !== 0 || s.lookahead !== 0 || flush2 !== Z_NO_FLUSH$2 && s.status !== FINISH_STATE) {
+      let bstate = s.level === 0 ? deflate_stored(s, flush2) : s.strategy === Z_HUFFMAN_ONLY ? deflate_huff(s, flush2) : s.strategy === Z_RLE ? deflate_rle(s, flush2) : configuration_table[s.level].func(s, flush2);
       if (bstate === BS_FINISH_STARTED || bstate === BS_FINISH_DONE) {
         s.status = FINISH_STATE;
       }
@@ -2032,11 +2147,11 @@
         return Z_OK$3;
       }
       if (bstate === BS_BLOCK_DONE) {
-        if (flush === Z_PARTIAL_FLUSH) {
+        if (flush2 === Z_PARTIAL_FLUSH) {
           _tr_align(s);
-        } else if (flush !== Z_BLOCK$1) {
+        } else if (flush2 !== Z_BLOCK$1) {
           _tr_stored_block(s, 0, 0, false);
-          if (flush === Z_FULL_FLUSH$1) {
+          if (flush2 === Z_FULL_FLUSH$1) {
             zero(s.head);
             if (s.lookahead === 0) {
               s.strstart = 0;
@@ -2052,7 +2167,7 @@
         }
       }
     }
-    if (flush !== Z_FINISH$3) {
+    if (flush2 !== Z_FINISH$3) {
       return Z_OK$3;
     }
     if (s.wrap <= 0) {
@@ -3274,7 +3389,7 @@
     }
     return 0;
   };
-  var inflate$2 = (strm, flush) => {
+  var inflate$2 = (strm, flush2) => {
     let state;
     let input2, output;
     let next;
@@ -3621,7 +3736,7 @@
             state.mode = TYPE;
           /* falls through */
           case TYPE:
-            if (flush === Z_BLOCK || flush === Z_TREES) {
+            if (flush2 === Z_BLOCK || flush2 === Z_TREES) {
               break inf_leave;
             }
           /* falls through */
@@ -3650,7 +3765,7 @@
               case 1:
                 fixedtables(state);
                 state.mode = LEN_;
-                if (flush === Z_TREES) {
+                if (flush2 === Z_TREES) {
                   hold >>>= 2;
                   bits -= 2;
                   break inf_leave;
@@ -3686,7 +3801,7 @@
             hold = 0;
             bits = 0;
             state.mode = COPY_;
-            if (flush === Z_TREES) {
+            if (flush2 === Z_TREES) {
               break inf_leave;
             }
           /* falls through */
@@ -3885,7 +4000,7 @@
               break;
             }
             state.mode = LEN_;
-            if (flush === Z_TREES) {
+            if (flush2 === Z_TREES) {
               break inf_leave;
             }
           /* falls through */
@@ -4184,7 +4299,7 @@
     strm.avail_in = have;
     state.hold = hold;
     state.bits = bits;
-    if (state.wsize || _out !== strm.avail_out && state.mode < BAD && (state.mode < CHECK || flush !== Z_FINISH$1)) {
+    if (state.wsize || _out !== strm.avail_out && state.mode < BAD && (state.mode < CHECK || flush2 !== Z_FINISH$1)) {
       if (updatewindow(strm, strm.output, strm.next_out, _out - strm.avail_out)) ;
     }
     _in -= strm.avail_in;
@@ -4197,7 +4312,7 @@
       state.flags ? crc32_1(state.check, output, _out, strm.next_out - _out) : adler32_1(state.check, output, _out, strm.next_out - _out);
     }
     strm.data_type = state.bits + (state.last ? 64 : 0) + (state.mode === TYPE ? 128 : 0) + (state.mode === LEN_ || state.mode === COPY_ ? 256 : 0);
-    if ((_in === 0 && _out === 0 || flush === Z_FINISH$1) && ret === Z_OK$1) {
+    if ((_in === 0 && _out === 0 || flush2 === Z_FINISH$1) && ret === Z_OK$1) {
       ret = Z_BUF_ERROR;
     }
     return ret;
@@ -4483,7 +4598,7 @@
   var FLUSH_INTERVAL_MS = 5e3;
   var COMPRESS_THRESHOLD_BYTES = 50 * 1024;
   var FLUSH_SIZE_BYTES = 150 * 1024;
-  var FIRST_CHUNK_DELAY_MS = 2e3;
+  var FIRST_CHUNK_DELAY_MS = 500;
   var STORAGE_CHUNK_KEY = "quicklook_chunk_index";
   var eventBuffer = [];
   var chunkIndex = 0;
@@ -4521,16 +4636,35 @@
       if (getSessionId()) {
         doFlush();
       } else {
-        console.warn("[quicklook] first chunk delayed: waiting for sessionId");
-        setTimeout(() => {
-          if (getSessionId()) doFlush();
-        }, 1e3);
+        let retries = 0;
+        const maxRetries = 5;
+        const retry = () => {
+          retries++;
+          if (getSessionId()) {
+            doFlush();
+          } else if (retries < maxRetries) {
+            setTimeout(retry, 1e3 * retries);
+          }
+        };
+        setTimeout(retry, 1e3);
       }
     }, FIRST_CHUNK_DELAY_MS);
   }
-  function doFlush() {
+  async function doFlush() {
     flushTimer = null;
-    if (eventBuffer.length === 0) return;
+    if (eventBuffer.length === 0) {
+      return;
+    }
+    if (shouldRotateSession()) {
+      try {
+        const result2 = await rotateSession("duration_limit");
+        if (result2) {
+          chunkIndex = 0;
+          persistChunkIndex();
+        }
+      } catch (e) {
+      }
+    }
     ensureRestoredChunkIndex();
     const events = eventBuffer.slice();
     eventBuffer = [];
@@ -4556,7 +4690,6 @@
       const sessionId2 = getSessionId();
       const apiUrl2 = getApiUrl();
       if (!sessionId2 || !apiUrl2) {
-        console.warn("[quicklook] chunk", index2, "dropped: no sessionId yet");
         return;
       }
       const json = JSON.stringify(events);
@@ -4580,7 +4713,6 @@
       }).catch(() => {
       });
     } catch (e) {
-      console.warn("[quicklook] sendChunkDirect error", e);
     }
   }
   var pendingWorkerChunks = [];
@@ -4588,7 +4720,6 @@
     const sessionId2 = getSessionId();
     const apiUrl2 = getApiUrl();
     if (!sessionId2 || !apiUrl2) {
-      console.warn("[quicklook] worker chunk", index2, "queued: no sessionId yet");
       pendingWorkerChunks.push({ index: index2, data });
       return;
     }
@@ -4645,7 +4776,23 @@
       scheduleFlush();
     }
   }
+  function flush() {
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+    if (firstChunkTimer) {
+      clearTimeout(firstChunkTimer);
+      firstChunkTimer = null;
+    }
+    if (eventBuffer.length > 0) {
+      doFlush();
+    }
+  }
+  var flushedOnUnload = false;
   function flushAndEnd() {
+    if (flushedOnUnload) return;
+    flushedOnUnload = true;
     if (flushTimer) {
       clearTimeout(flushTimer);
       flushTimer = null;
@@ -4663,13 +4810,19 @@
       const sessionId2 = getSessionId();
       const apiUrl2 = getApiUrl();
       if (sessionId2 && apiUrl2) {
-        const body = JSON.stringify({ index: index2, data: events, compressed: false, status: "close" });
-        navigator.sendBeacon(`${apiUrl2}/api/quicklook/sessions/${sessionId2}/end`, body);
+        const body = JSON.stringify({ index: index2, data: events, compressed: false });
+        navigator.sendBeacon(`${apiUrl2}/api/quicklook/sessions/${sessionId2}/chunk`, body);
       }
     }
   }
   function startScheduler() {
     scheduleFlush();
+  }
+  function stopScheduler() {
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
   }
 
   // node_modules/@rrweb/record/dist/record.js
@@ -5610,12 +5763,12 @@
     } = options;
     const needBlock = _isBlockedElement(n2, blockClass, blockSelector);
     const tagName = getValidTagName$1(n2);
-    let attributes = {};
+    let attributes2 = {};
     const len = n2.attributes.length;
     for (let i2 = 0; i2 < len; i2++) {
       const attr = n2.attributes[i2];
       if (!ignoreAttribute(tagName, attr.name, attr.value)) {
-        attributes[attr.name] = transformAttribute(
+        attributes2[attr.name] = transformAttribute(
           doc,
           tagName,
           toLowerCase(attr.name),
@@ -5632,9 +5785,9 @@
         cssText = stringifyStylesheet(stylesheet);
       }
       if (cssText) {
-        delete attributes.rel;
-        delete attributes.href;
-        attributes._cssText = cssText;
+        delete attributes2.rel;
+        delete attributes2.href;
+        attributes2._cssText = cssText;
       }
     }
     if (tagName === "style" && n2.sheet) {
@@ -5645,14 +5798,14 @@
         if (n2.childNodes.length > 1) {
           cssText = markCssSplits(cssText, n2);
         }
-        attributes._cssText = cssText;
+        attributes2._cssText = cssText;
       }
     }
     if (["input", "textarea", "select"].includes(tagName)) {
       const value = n2.value;
       const checked = n2.checked;
-      if (attributes.type !== "radio" && attributes.type !== "checkbox" && attributes.type !== "submit" && attributes.type !== "button" && value) {
-        attributes.value = maskInputValue({
+      if (attributes2.type !== "radio" && attributes2.type !== "checkbox" && attributes2.type !== "submit" && attributes2.type !== "button" && value) {
+        attributes2.value = maskInputValue({
           element: n2,
           type: getInputType(n2),
           tagName,
@@ -5661,23 +5814,23 @@
           maskInputFn
         });
       } else if (checked) {
-        attributes.checked = checked;
+        attributes2.checked = checked;
       }
     }
     if (tagName === "option") {
       if (n2.selected && !maskInputOptions["select"]) {
-        attributes.selected = true;
+        attributes2.selected = true;
       } else {
-        delete attributes.selected;
+        delete attributes2.selected;
       }
     }
     if (tagName === "dialog" && n2.open) {
-      attributes.rr_open_mode = n2.matches("dialog:modal") ? "modal" : "non-modal";
+      attributes2.rr_open_mode = n2.matches("dialog:modal") ? "modal" : "non-modal";
     }
     if (tagName === "canvas" && recordCanvas) {
       if (n2.__context === "2d") {
         if (!is2DCanvasBlank(n2)) {
-          attributes.rr_dataURL = n2.toDataURL(
+          attributes2.rr_dataURL = n2.toDataURL(
             dataURLOptions.type,
             dataURLOptions.quality
           );
@@ -5695,7 +5848,7 @@
           dataURLOptions.quality
         );
         if (canvasDataURL !== blankCanvasDataURL) {
-          attributes.rr_dataURL = canvasDataURL;
+          attributes2.rr_dataURL = canvasDataURL;
         }
       }
     }
@@ -5713,7 +5866,7 @@
           canvasService.width = image.naturalWidth;
           canvasService.height = image.naturalHeight;
           canvasCtx.drawImage(image, 0, 0);
-          attributes.rr_dataURL = canvasService.toDataURL(
+          attributes2.rr_dataURL = canvasService.toDataURL(
             dataURLOptions.type,
             dataURLOptions.quality
           );
@@ -5731,14 +5884,14 @@
           }
         }
         if (image.crossOrigin === "anonymous") {
-          priorCrossOrigin ? attributes.crossOrigin = priorCrossOrigin : image.removeAttribute("crossorigin");
+          priorCrossOrigin ? attributes2.crossOrigin = priorCrossOrigin : image.removeAttribute("crossorigin");
         }
       };
       if (image.complete && image.naturalWidth !== 0) recordInlineImage();
       else image.addEventListener("load", recordInlineImage);
     }
     if (["audio", "video"].includes(tagName)) {
-      const mediaAttributes = attributes;
+      const mediaAttributes = attributes2;
       mediaAttributes.rr_mediaState = n2.paused ? "paused" : "played";
       mediaAttributes.rr_mediaCurrentTime = n2.currentTime;
       mediaAttributes.rr_mediaPlaybackRate = n2.playbackRate;
@@ -5748,25 +5901,25 @@
     }
     if (!newlyAddedElement) {
       if (n2.scrollLeft) {
-        attributes.rr_scrollLeft = n2.scrollLeft;
+        attributes2.rr_scrollLeft = n2.scrollLeft;
       }
       if (n2.scrollTop) {
-        attributes.rr_scrollTop = n2.scrollTop;
+        attributes2.rr_scrollTop = n2.scrollTop;
       }
     }
     if (needBlock) {
       const { width, height } = n2.getBoundingClientRect();
-      attributes = {
-        class: attributes.class,
+      attributes2 = {
+        class: attributes2.class,
         rr_width: `${width}px`,
         rr_height: `${height}px`
       };
     }
-    if (tagName === "iframe" && !keepIframeSrcFn(attributes.src)) {
+    if (tagName === "iframe" && !keepIframeSrcFn(attributes2.src)) {
       if (!n2.contentDocument) {
-        attributes.rr_src = attributes.src;
+        attributes2.rr_src = attributes2.src;
       }
-      delete attributes.src;
+      delete attributes2.src;
     }
     let isCustomElement;
     try {
@@ -5776,7 +5929,7 @@
     return {
       type: NodeType$3.Element,
       tagName,
-      attributes,
+      attributes: attributes2,
       childNodes: [],
       isSVG: isSVGElement(n2) || void 0,
       needBlock,
@@ -14064,19 +14217,19 @@
             };
           }).filter((text) => !addedIds.has(text.id)).filter((text) => this.mirror.has(text.id)),
           attributes: this.attributes.map((attribute) => {
-            const { attributes } = attribute;
-            if (typeof attributes.style === "string") {
+            const { attributes: attributes2 } = attribute;
+            if (typeof attributes2.style === "string") {
               const diffAsStr = JSON.stringify(attribute.styleDiff);
               const unchangedAsStr = JSON.stringify(attribute._unchangedStyles);
-              if (diffAsStr.length < attributes.style.length) {
-                if ((diffAsStr + unchangedAsStr).split("var(").length === attributes.style.split("var(").length) {
-                  attributes.style = attribute.styleDiff;
+              if (diffAsStr.length < attributes2.style.length) {
+                if ((diffAsStr + unchangedAsStr).split("var(").length === attributes2.style.split("var(").length) {
+                  attributes2.style = attribute.styleDiff;
                 }
               }
             }
             return {
               id: this.mirror.getId(attribute.node),
-              attributes
+              attributes: attributes2
             };
           }).filter((attribute) => !addedIds.has(attribute.id)).filter((attribute) => this.mirror.has(attribute.id)),
           removes: this.removes,
@@ -16948,11 +17101,14 @@
   // src/record.js
   var stopFn = null;
   function startRecording() {
-    if (stopFn) return;
+    if (stopFn) {
+      return;
+    }
     stopFn = record({
       emit(event) {
         pushEvent3(event);
       },
+      checkoutEveryNms: 3e4,
       inlineStylesheet: true,
       collectFonts: true,
       recordCSSVariables: true,
@@ -16974,17 +17130,131 @@
     }
   }
   async function ensureSessionStarted() {
-    await startSession();
+    return await startSession();
+  }
+
+  // src/activity.js
+  var inactivityTimer = null;
+  var isPaused = false;
+  var inactivityTimeout = 5 * 60 * 1e3;
+  var pauseOnHidden = true;
+  var activityListenersAttached = false;
+  var pauseCallback = null;
+  var resumeCallback = null;
+  function setActivityCallbacks(onPause, onResume) {
+    pauseCallback = onPause;
+    resumeCallback = onResume;
+  }
+  function setActivityConfig(config) {
+    if (config.inactivityTimeout !== void 0) {
+      inactivityTimeout = config.inactivityTimeout;
+    }
+    if (config.pauseOnHidden !== void 0) {
+      pauseOnHidden = config.pauseOnHidden;
+    }
+  }
+  function pauseRecording() {
+    if (isPaused) return;
+    isPaused = true;
+    if (pauseCallback) pauseCallback();
+  }
+  function resumeRecording() {
+    if (!isPaused) return;
+    isPaused = false;
+    if (resumeCallback) resumeCallback();
+  }
+  function resetInactivityTimer() {
+    if (inactivityTimer) clearTimeout(inactivityTimer);
+    if (isPaused || inactivityTimeout <= 0) return;
+    inactivityTimer = setTimeout(() => {
+      pauseRecording();
+    }, inactivityTimeout);
+  }
+  function handleVisibilityChange() {
+    if (!pauseOnHidden) return;
+    if (typeof document !== "undefined" && document.hidden) {
+      pauseRecording();
+    } else {
+      if (isPaused) {
+        resumeRecording();
+      }
+      resetInactivityTimer();
+    }
+  }
+  function handleUserActivity() {
+    if (typeof document !== "undefined" && document.hidden) return;
+    if (isPaused) {
+      resumeRecording();
+    }
+    resetInactivityTimer();
+  }
+  function startActivityMonitoring() {
+    if (activityListenersAttached || typeof window === "undefined" || typeof document === "undefined") return;
+    activityListenersAttached = true;
+    if (pauseOnHidden) {
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+    }
+    if (inactivityTimeout > 0) {
+      const activityEvents = ["mousedown", "keydown", "scroll", "touchstart"];
+      activityEvents.forEach((event) => {
+        document.addEventListener(event, handleUserActivity, { passive: true });
+      });
+      resetInactivityTimer();
+    }
+  }
+  function stopActivityMonitoring() {
+    if (!activityListenersAttached || typeof document === "undefined") return;
+    activityListenersAttached = false;
+    if (inactivityTimer) {
+      clearTimeout(inactivityTimer);
+      inactivityTimer = null;
+    }
+    document.removeEventListener("visibilitychange", handleVisibilityChange);
+    const activityEvents = ["mousedown", "keydown", "scroll", "touchstart"];
+    activityEvents.forEach((event) => {
+      document.removeEventListener(event, handleUserActivity);
+    });
   }
 
   // src/init.js
   var DEFAULT_API_URL = "http://localhost:3080";
+  var KNOWN_OPTIONS = /* @__PURE__ */ new Set(["apiUrl", "retentionDays", "captureStorage", "workerUrl", "excludedUrls", "includedUrls", "inactivityTimeout", "pauseOnHidden", "maxSessionDuration"]);
   function pushEventAndMaybeStart(ev) {
     pushEvent3(ev);
   }
   var recordingStarted = false;
   var stopRecord = null;
+  function patchHistoryAPI(pushEventFn, onNavigate) {
+    if (typeof window === "undefined" || typeof history === "undefined") return;
+    const afterNav = () => {
+      pushEventFn({
+        type: 4,
+        // Meta event
+        data: { href: window.location.href },
+        timestamp: Date.now()
+      });
+      if (typeof onNavigate === "function") onNavigate();
+    };
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+    history.pushState = function(...args) {
+      const result2 = originalPushState.apply(this, args);
+      afterNav();
+      return result2;
+    };
+    history.replaceState = function(...args) {
+      const result2 = originalReplaceState.apply(this, args);
+      afterNav();
+      return result2;
+    };
+    window.addEventListener("popstate", afterNav);
+  }
+  var initCalled = false;
   function init(projectKey2, options = {}) {
+    if (initCalled) {
+      return;
+    }
+    initCalled = true;
     const apiUrl2 = options.apiUrl || DEFAULT_API_URL;
     const meta2 = captureDeviceMeta();
     const user2 = getIdentity();
@@ -16994,45 +17264,114 @@
       } catch (e) {
       }
     }
+    const custom = {};
+    for (const key of Object.keys(options)) {
+      if (KNOWN_OPTIONS.has(key)) continue;
+      const v = options[key];
+      if (v !== void 0 && v !== null) custom[key] = v;
+    }
+    const apiUrlNorm = apiUrl2.replace(/\/$/, "");
     setConfig({
-      apiUrl: apiUrl2,
+      apiUrl: apiUrlNorm,
       projectKey: String(projectKey2),
       meta: meta2,
       user: user2,
-      retentionDays: options.retentionDays ?? 30
+      retentionDays: options.retentionDays ?? 30,
+      attributes: Object.keys(custom).length ? custom : void 0,
+      excludedUrls: options.excludedUrls,
+      includedUrls: options.includedUrls,
+      maxSessionDuration: options.maxSessionDuration !== void 0 ? options.maxSessionDuration : 60 * 60 * 1e3
     });
+    setActivityConfig({
+      inactivityTimeout: options.inactivityTimeout !== void 0 ? options.inactivityTimeout : 5 * 60 * 1e3,
+      pauseOnHidden: options.pauseOnHidden !== void 0 ? options.pauseOnHidden : true
+    });
+    setActivityCallbacks(
+      () => {
+        if (recordingStarted) {
+          stopRecording();
+          flush();
+          stopScheduler();
+        }
+      },
+      () => {
+        if (recordingStarted) {
+          startRecording();
+          startScheduler();
+        }
+      }
+    );
     patchConsole(pushEventAndMaybeStart);
-    patchNetwork(pushEventAndMaybeStart, apiUrl2);
+    patchNetwork(pushEventAndMaybeStart, apiUrlNorm);
     if (options.workerUrl !== false) {
       const script = typeof document !== "undefined" && document.currentScript;
       const base = script && script.src ? script.src.replace(/\/[^/]*$/, "/") : "";
-      const baseOrApi = base || apiUrl2.replace(/\/$/, "") + "/";
+      const baseOrApi = base || apiUrlNorm + "/";
       const workerUrl2 = options.workerUrl || baseOrApi + "compress.worker.js";
       setWorkerUrl(workerUrl2);
       try {
         const w = new Worker(workerUrl2);
         setWorker(w);
       } catch (e) {
-        console.warn("[quicklook] worker failed, using uncompressed upload", e);
       }
     }
-    ensureSessionStarted().then(() => {
+    async function startRecordingOnPage() {
+      const sessionId2 = await ensureSessionStarted();
+      if (!sessionId2) return false;
       flushPendingWorkerChunks();
       startRecording();
       startScheduler();
+      startActivityMonitoring();
       recordingStarted = true;
       stopRecord = stopRecording;
-    }).catch((e) => {
-      console.warn("[quicklook] session start failed, recording disabled", e);
-    });
+      return true;
+    }
+    function recheckPageRecording() {
+      const url = typeof location !== "undefined" ? location.href : "";
+      if (isPageExcluded(url)) {
+        if (recordingStarted) {
+          stopRecording();
+          flush();
+          stopScheduler();
+          recordingStarted = false;
+          stopRecord = null;
+        }
+      } else if (!recordingStarted) {
+        startRecordingOnPage();
+      }
+    }
+    (async () => {
+      if (options.excludedUrls === void 0 && typeof fetch !== "undefined") {
+        try {
+          const r = await fetch(`${apiUrlNorm}/api/quicklook/projects/${encodeURIComponent(projectKey2)}/config`);
+          const d = await r.json();
+          if (d && d.success && Array.isArray(d.excludedUrls)) {
+            setConfig({ excludedUrls: d.excludedUrls });
+          }
+        } catch (_) {
+        }
+      }
+      const url = typeof location !== "undefined" ? location.href : "";
+      if (isPageExcluded(url)) {
+        patchHistoryAPI(pushEventAndMaybeStart, recheckPageRecording);
+        return;
+      }
+      try {
+        await startRecordingOnPage();
+        patchHistoryAPI(pushEventAndMaybeStart, recheckPageRecording);
+      } catch (e) {
+        patchHistoryAPI(pushEventAndMaybeStart, recheckPageRecording);
+      }
+    })();
   }
   function identify(data) {
     setIdentity(data);
   }
   function stop() {
+    stopActivityMonitoring();
     if (stopRecord) stopRecord();
     flushAndEnd();
-    endSession();
+    endSession(void 0, { clearStorage: true });
   }
   function getSessionIdPublic(cb) {
     const id = getSessionId();
@@ -17048,10 +17387,14 @@
     };
     if (typeof window !== "undefined") {
       window.addEventListener("pagehide", () => {
-        if (recordingStarted) flushAndEnd();
+        if (recordingStarted) {
+          flushAndEnd();
+        }
       });
       window.addEventListener("beforeunload", () => {
-        if (recordingStarted) flushAndEnd();
+        if (recordingStarted) {
+          flushAndEnd();
+        }
       });
     }
     return api2;
@@ -17080,6 +17423,13 @@
     const prevQ = prev && prev.q || [];
     window.quicklook = quicklookGlobal;
     window.quicklook.q = prevQ;
+    Object.defineProperty(window.quicklook, "sessionId", {
+      get() {
+        return getSessionId();
+      },
+      configurable: true,
+      enumerable: true
+    });
     quicklookGlobal();
   }
 })();

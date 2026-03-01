@@ -3,11 +3,14 @@ import { setIdentity, getIdentity } from "./collectors/identity.js";
 import { patchConsole } from "./collectors/console.js";
 import { patchNetwork } from "./collectors/network.js";
 import { captureStorageSnapshot } from "./collectors/storage.js";
-import { setConfig, startSession, endSession, getSessionId, isStarted } from "./session.js";
-import { pushEvent, setWorker, setWorkerUrl, startScheduler, flushAndEnd, flushPendingWorkerChunks } from "./upload.js";
+import { setConfig, endSession, getSessionId, isStarted, isPageExcluded } from "./session.js";
+import { pushEvent, setWorker, setWorkerUrl, startScheduler, flushAndEnd, flush, flushPendingWorkerChunks, stopScheduler } from "./upload.js";
 import { startRecording, stopRecording, ensureSessionStarted } from "./record.js";
+import { setActivityConfig, setActivityCallbacks, startActivityMonitoring, stopActivityMonitoring } from "./activity.js";
 
 const DEFAULT_API_URL = "http://localhost:3080";
+
+const KNOWN_OPTIONS = new Set(["apiUrl", "retentionDays", "captureStorage", "workerUrl", "excludedUrls", "includedUrls", "inactivityTimeout", "pauseOnHidden", "maxSessionDuration"]);
 
 function pushEventAndMaybeStart(ev) {
   pushEvent(ev);
@@ -16,7 +19,43 @@ function pushEventAndMaybeStart(ev) {
 let recordingStarted = false;
 let stopRecord = null;
 
+function patchHistoryAPI(pushEventFn, onNavigate) {
+  if (typeof window === "undefined" || typeof history === "undefined") return;
+
+  const afterNav = () => {
+    pushEventFn({
+      type: 4,  // Meta event
+      data: { href: window.location.href },
+      timestamp: Date.now()
+    });
+    if (typeof onNavigate === "function") onNavigate();
+  };
+
+  const originalPushState = history.pushState;
+  const originalReplaceState = history.replaceState;
+
+  history.pushState = function(...args) {
+    const result = originalPushState.apply(this, args);
+    afterNav();
+    return result;
+  };
+
+  history.replaceState = function(...args) {
+    const result = originalReplaceState.apply(this, args);
+    afterNav();
+    return result;
+  };
+
+  window.addEventListener("popstate", afterNav);
+}
+
+let initCalled = false;
+
 function init(projectKey, options = {}) {
+  if (initCalled) {
+    return;
+  }
+  initCalled = true;
   const apiUrl = options.apiUrl || DEFAULT_API_URL;
   const meta = captureDeviceMeta();
   const user = getIdentity();
@@ -25,39 +64,111 @@ function init(projectKey, options = {}) {
       meta.localStorageSnapshot = captureStorageSnapshot();
     } catch (e) {}
   }
+  const custom = {};
+  for (const key of Object.keys(options)) {
+    if (KNOWN_OPTIONS.has(key)) continue;
+    const v = options[key];
+    if (v !== undefined && v !== null) custom[key] = v;
+  }
+  const apiUrlNorm = apiUrl.replace(/\/$/, "");
   setConfig({
-    apiUrl,
+    apiUrl: apiUrlNorm,
     projectKey: String(projectKey),
     meta,
     user,
     retentionDays: options.retentionDays ?? 30,
+    attributes: Object.keys(custom).length ? custom : undefined,
+    excludedUrls: options.excludedUrls,
+    includedUrls: options.includedUrls,
+    maxSessionDuration: options.maxSessionDuration !== undefined ? options.maxSessionDuration : 60 * 60 * 1000,
   });
+  
+  setActivityConfig({
+    inactivityTimeout: options.inactivityTimeout !== undefined ? options.inactivityTimeout : 5 * 60 * 1000,
+    pauseOnHidden: options.pauseOnHidden !== undefined ? options.pauseOnHidden : true,
+  });
+  
+  setActivityCallbacks(
+    () => {
+      if (recordingStarted) {
+        stopRecording();
+        flush();
+        stopScheduler();
+      }
+    },
+    () => {
+      if (recordingStarted) {
+        startRecording();
+        startScheduler();
+      }
+    }
+  );
+  
   patchConsole(pushEventAndMaybeStart);
-  patchNetwork(pushEventAndMaybeStart, apiUrl);
+  patchNetwork(pushEventAndMaybeStart, apiUrlNorm);
   if (options.workerUrl !== false) {
     const script = typeof document !== "undefined" && document.currentScript;
     const base = script && script.src ? script.src.replace(/\/[^/]*$/, "/") : "";
-    const baseOrApi = base || (apiUrl.replace(/\/$/, "") + "/");
+    const baseOrApi = base || apiUrlNorm + "/";
     const workerUrl = options.workerUrl || baseOrApi + "compress.worker.js";
     setWorkerUrl(workerUrl);
     try {
       const w = new Worker(workerUrl);
       setWorker(w);
     } catch (e) {
-      console.warn("[quicklook] worker failed, using uncompressed upload", e);
+      // Worker failed, using uncompressed upload
     }
   }
-  ensureSessionStarted()
-    .then(() => {
-      flushPendingWorkerChunks();
-      startRecording();
-      startScheduler();
-      recordingStarted = true;
-      stopRecord = stopRecording;
-    })
-    .catch((e) => {
-      console.warn("[quicklook] session start failed, recording disabled", e);
-    });
+
+  async function startRecordingOnPage() {
+    const sessionId = await ensureSessionStarted();
+    if (!sessionId) return false;
+    flushPendingWorkerChunks();
+    startRecording();
+    startScheduler();
+    startActivityMonitoring();
+    recordingStarted = true;
+    stopRecord = stopRecording;
+    return true;
+  }
+
+  function recheckPageRecording() {
+    const url = typeof location !== "undefined" ? location.href : "";
+    if (isPageExcluded(url)) {
+      if (recordingStarted) {
+        stopRecording();
+        flush();
+        stopScheduler();
+        recordingStarted = false;
+        stopRecord = null;
+      }
+    } else if (!recordingStarted) {
+      startRecordingOnPage();
+    }
+  }
+
+  (async () => {
+    if (options.excludedUrls === undefined && typeof fetch !== "undefined") {
+      try {
+        const r = await fetch(`${apiUrlNorm}/api/quicklook/projects/${encodeURIComponent(projectKey)}/config`);
+        const d = await r.json();
+        if (d && d.success && Array.isArray(d.excludedUrls)) {
+          setConfig({ excludedUrls: d.excludedUrls });
+        }
+      } catch (_) {}
+    }
+    const url = typeof location !== "undefined" ? location.href : "";
+    if (isPageExcluded(url)) {
+      patchHistoryAPI(pushEventAndMaybeStart, recheckPageRecording);
+      return;
+    }
+    try {
+      await startRecordingOnPage();
+      patchHistoryAPI(pushEventAndMaybeStart, recheckPageRecording);
+    } catch (e) {
+      patchHistoryAPI(pushEventAndMaybeStart, recheckPageRecording);
+    }
+  })();
 }
 
 function identify(data) {
@@ -65,9 +176,10 @@ function identify(data) {
 }
 
 function stop() {
+  stopActivityMonitoring();
   if (stopRecord) stopRecord();
   flushAndEnd();
-  endSession();
+  endSession(undefined, { clearStorage: true });
 }
 
 function getSessionIdPublic(cb) {
@@ -84,14 +196,21 @@ export function createQuicklook() {
     getSessionId: getSessionIdPublic,
   };
   if (typeof window !== "undefined") {
+    // On any page unload, just flush buffered events — never destroy the session.
+    // Session continuity relies on sessionStorage (persists across same-origin
+    // navigations within the same tab). The server closes stale sessions via
+    // inactivity timeout, so we don't need to guess whether the user is
+    // navigating vs. closing the tab.
     window.addEventListener("pagehide", () => {
-      if (recordingStarted) flushAndEnd();
-      // Do not endSession() here: keep the same session across page navigations (same tab).
-      // Session is ended only when the app calls stop() or when the tab is closed (storage is cleared).
+      if (recordingStarted) {
+        flushAndEnd();
+      }
     });
+
     window.addEventListener("beforeunload", () => {
-      if (recordingStarted) flushAndEnd();
-      // Do not endSession() so that the next page in the same tab reuses the session.
+      if (recordingStarted) {
+        flushAndEnd();
+      }
     });
   }
   return api;

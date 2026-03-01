@@ -38,3 +38,6 @@ export const getEvents = (id) => api.get(`/sessions/${id}/events`);
 
 export const getProjects = () => api.get("/projects");
 export const createProject = (body) => api.post("/projects", body);
+export const getProject = (projectKey) => api.get(`/projects/${projectKey}`);
+export const updateProject = (projectKey, data) => api.patch(`/projects/${projectKey}`, data);
+export const deleteProject = (projectKey) => api.delete(`/projects/${projectKey}`);

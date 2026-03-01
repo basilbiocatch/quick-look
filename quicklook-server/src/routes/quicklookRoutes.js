@@ -9,6 +9,10 @@ const router = express.Router();
 
 router.get("/projects", requireAuth, quicklookController.getProjects);
 router.post("/projects", requireAuth, quicklookController.createProject);
+router.get("/projects/:projectKey/config", quicklookController.getProjectConfig);
+router.get("/projects/:projectKey", requireAuth, quicklookController.getProject);
+router.patch("/projects/:projectKey", requireAuth, quicklookController.updateProject);
+router.delete("/projects/:projectKey", requireAuth, quicklookController.deleteProject);
 
 router.post("/sessions/start", validateOrigin, quicklookController.startSession);
 router.post("/sessions/:sessionId/chunk", validateOrigin, quicklookController.saveChunk);

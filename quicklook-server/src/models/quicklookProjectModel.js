@@ -13,6 +13,8 @@ const projectSchema = new mongoose.Schema(
     apiKey: { type: String, index: true },
     retentionDays: { type: Number, default: 30 },
     allowedDomains: { type: [String], default: [] },
+    /** URL path or substring patterns: pages matching any of these are not monitored by the SDK. */
+    excludedUrls: { type: [String], default: [] },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
   },

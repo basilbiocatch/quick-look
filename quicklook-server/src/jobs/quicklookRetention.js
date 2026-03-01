@@ -23,3 +23,25 @@ export const startQuicklookRetentionJob = () => {
   );
   logger.info("Quicklook retention job scheduled");
 };
+
+export const startAutoCloseInactiveSessionsJob = () => {
+  const isDev = ["development", "dev", undefined].includes(process.env.NODE_ENV);
+  // Run every 5 minutes in dev, every 10 minutes in production
+  const schedule = isDev ? "*/5 * * * *" : "*/10 * * * *";
+  cron.schedule(
+    schedule,
+    async () => {
+      try {
+        // Auto-close sessions inactive for 30 minutes
+        const result = await QuicklookService.autoCloseInactiveSessions(30 * 60 * 1000);
+        if (result.closed > 0) {
+          logger.info(`QuicklookAutoClose: closed ${result.closed} inactive sessions`);
+        }
+      } catch (err) {
+        logger.error("QuicklookAutoClose job error:", err);
+      }
+    },
+    { scheduled: true, timezone: "UTC" }
+  );
+  logger.info("Quicklook auto-close inactive sessions job scheduled");
+};

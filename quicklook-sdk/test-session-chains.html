@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quicklook SDK - Session Chains Test</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      max-width: 900px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      margin-top: 0;
+    }
+    .status {
+      padding: 15px;
+      border-radius: 5px;
+      margin: 20px 0;
+      font-weight: 500;
+      background: #e7f3ff;
+      border-left: 4px solid #2196F3;
+    }
+    .chain-info {
+      background: #f0f9ff;
+      padding: 15px;
+      border-radius: 5px;
+      margin: 20px 0;
+      border: 2px solid #0ea5e9;
+    }
+    .chain-info h3 {
+      margin-top: 0;
+      color: #0369a1;
+    }
+    .session-item {
+      background: white;
+      padding: 12px;
+      margin: 8px 0;
+      border-radius: 4px;
+      border: 1px solid #bae6fd;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .session-item.current {
+      background: #dbeafe;
+      border-color: #0ea5e9;
+      font-weight: 600;
+    }
+    .info {
+      background: #fff3cd;
+      padding: 15px;
+      border-radius: 5px;
+      margin: 20px 0;
+      border-left: 4px solid #ffc107;
+    }
+    .info h3 {
+      margin-top: 0;
+      color: #856404;
+    }
+    button {
+      background: #2196F3;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-right: 10px;
+      margin-bottom: 10px;
+    }
+    button:hover {
+      background: #1976D2;
+    }
+    button.danger {
+      background: #f44336;
+    }
+    button.danger:hover {
+      background: #d32f2f;
+    }
+    .code {
+      background: #f4f4f4;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: monospace;
+      font-size: 13px;
+    }
+    .timer {
+      font-size: 24px;
+      font-weight: bold;
+      color: #2196F3;
+      margin: 10px 0;
+    }
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background: #e0e0e0;
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 10px 0;
+    }
+    .progress-fill {
+      height: 100%;
+      background: #2196F3;
+      transition: width 0.5s;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔗 Quicklook SDK - Session Chains Test</h1>
+    
+    <div class="status" id="status">
+      ⏳ Initializing...
+    </div>
+
+    <div class="chain-info" id="chainInfo" style="display: none;">
+      <h3>📊 Current Session Chain</h3>
+      <div>
+        <strong>Chain ID:</strong> <span class="code" id="chainId">-</span><br>
+        <strong>Current Session:</strong> <span class="code" id="currentSession">-</span><br>
+        <strong>Sequence:</strong> <span id="sequenceNum">-</span><br>
+        <strong>Time in Session:</strong> <div class="timer" id="sessionTimer">00:00</div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressBar"></div>
+        </div>
+        <small>Session will rotate at 2:00 (2 minutes for testing)</small>
+      </div>
+      
+      <div style="margin-top: 15px;">
+        <strong>Session History:</strong>
+        <div id="sessionHistory"></div>
+      </div>
+    </div>
+
+    <div class="info">
+      <h3>🧪 How to Test Session Chains:</h3>
+      <ul>
+        <li><strong>Automatic Rotation:</strong> Wait 2 minutes. Session will automatically split and continue.</li>
+        <li><strong>Watch Console:</strong> See rotation messages with chain ID and sequence numbers.</li>
+        <li><strong>Check Storage:</strong> Open DevTools → Application → Session Storage to see chain data.</li>
+        <li><strong>Multiple Rotations:</strong> Keep page open for 4+ minutes to see multiple rotations.</li>
+        <li><strong>Manual Rotation:</strong> Click "Force Rotation" to test manually.</li>
+      </ul>
+    </div>
+
+    <div style="margin: 20px 0;">
+      <button onclick="forceRotation()">🔄 Force Rotation</button>
+      <button onclick="checkChain()">📊 Check Chain Status</button>
+      <button onclick="clearAndRestart()" class="danger">🗑️ Clear & Restart</button>
+    </div>
+
+    <div style="margin-top: 20px; color: #666; font-size: 14px;">
+      <p><strong>Configuration:</strong></p>
+      <ul>
+        <li>Max Session Duration: <span class="code">2 minutes</span> (testing)</li>
+        <li>Inactivity Timeout: <span class="code">5 minutes</span></li>
+        <li>API URL: <span class="code">http://localhost:3080</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <script src="dist/quicklook-sdk.js"></script>
+  <script>
+    let sessionHistory = [];
+    let startTime = Date.now();
+    let timerInterval = null;
+
+    // Initialize Quicklook with short duration for testing
+    window.quicklook("init", "test-project-key", {
+      apiUrl: "http://localhost:3080",
+      maxSessionDuration: 2 * 60 * 1000, // 2 minutes for testing
+      inactivityTimeout: 5 * 60 * 1000,
+      pauseOnHidden: false, // Keep recording even when hidden for testing
+      retentionDays: 1
+    });
+
+    function updateStatus() {
+      const sessionId = window.quicklook.sessionId;
+      const chainId = sessionStorage.getItem('quicklook_chain_id');
+      const startTimeStored = sessionStorage.getItem('quicklook_start_time');
+      
+      if (sessionId) {
+        document.getElementById('status').innerHTML = '✅ Recording Active';
+        document.getElementById('chainInfo').style.display = 'block';
+        document.getElementById('currentSession').textContent = sessionId.slice(0, 16) + '...';
+        document.getElementById('chainId').textContent = chainId ? chainId.slice(0, 16) + '...' : sessionId.slice(0, 16) + '...';
+        
+        // Add to history if new session
+        if (!sessionHistory.find(s => s.id === sessionId)) {
+          const sequence = sessionHistory.length + 1;
+          sessionHistory.push({
+            id: sessionId,
+            sequence: sequence,
+            startTime: Date.now()
+          });
+          document.getElementById('sequenceNum').textContent = `Session ${sequence} of ${sessionHistory.length}`;
+          updateSessionHistory();
+        }
+      }
+    }
+
+    function updateSessionHistory() {
+      const historyHtml = sessionHistory.map((session, index) => {
+        const isCurrent = session.id === window.quicklook.sessionId;
+        const elapsed = isCurrent ? Date.now() - session.startTime : 120000; // 2 min if closed
+        const minutes = Math.floor(elapsed / 60000);
+        const seconds = Math.floor((elapsed % 60000) / 1000);
+        const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        
+        return `
+          <div class="session-item ${isCurrent ? 'current' : ''}">
+            <span>${isCurrent ? '▶' : '✓'} Session ${session.sequence}</span>
+            <span>${timeStr} ${isCurrent ? '(active)' : ''}</span>
+          </div>
+        `;
+      }).join('');
+      
+      document.getElementById('sessionHistory').innerHTML = historyHtml;
+    }
+
+    function updateTimer() {
+      const startTimeStored = sessionStorage.getItem('quicklook_start_time');
+      if (!startTimeStored) return;
+      
+      const elapsed = Date.now() - parseInt(startTimeStored);
+      const minutes = Math.floor(elapsed / 60000);
+      const seconds = Math.floor((elapsed % 60000) / 1000);
+      
+      document.getElementById('sessionTimer').textContent = 
+        `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      
+      // Update progress bar (2 minutes = 100%)
+      const progress = Math.min((elapsed / (2 * 60 * 1000)) * 100, 100);
+      document.getElementById('progressBar').style.width = progress + '%';
+      
+      updateSessionHistory();
+    }
+
+    function forceRotation() {
+      console.log('[Test] Forcing session rotation...');
+      // Trigger rotation by setting start time to 2 minutes ago
+      const twoMinutesAgo = Date.now() - (2 * 60 * 1000 + 1000);
+      sessionStorage.setItem('quicklook_start_time', twoMinutesAgo.toString());
+      alert('Session rotation will trigger on next chunk flush (within 5 seconds).\n\nWatch the console and session history!');
+    }
+
+    async function checkChain() {
+      const sessionId = window.quicklook.sessionId;
+      const chainId = sessionStorage.getItem('quicklook_chain_id');
+      
+      console.log('[Test] Chain Status:', {
+        currentSessionId: sessionId,
+        chainId: chainId,
+        sessionHistory: sessionHistory,
+        sessionStorage: {
+          sid: sessionStorage.getItem('quicklook_sid'),
+          chainId: sessionStorage.getItem('quicklook_chain_id'),
+          startTime: sessionStorage.getItem('quicklook_start_time'),
+          chunkIndex: sessionStorage.getItem('quicklook_chunk_index')
+        }
+      });
+      
+      alert(`Chain Status:\n\nCurrent Session: ${sessionId}\nChain ID: ${chainId}\nTotal Sessions: ${sessionHistory.length}\n\nCheck console for full details!`);
+    }
+
+    function clearAndRestart() {
+      if (!confirm('This will clear all session data and restart. Continue?')) return;
+      
+      sessionStorage.clear();
+      sessionHistory = [];
+      document.getElementById('sessionHistory').innerHTML = '';
+      location.reload();
+    }
+
+    // Monitor for rotation events
+    const originalConsoleLog = console.log;
+    console.log = function(...args) {
+      originalConsoleLog.apply(console, args);
+      
+      if (args[0] && args[0].includes('Session rotated')) {
+        console.log('[Test] 🎉 Session rotation detected!');
+        setTimeout(() => {
+          updateStatus();
+        }, 1000);
+      }
+    };
+
+    // Initialize
+    setTimeout(() => {
+      updateStatus();
+      timerInterval = setInterval(updateTimer, 500);
+    }, 1000);
+
+    // Trigger some activity to ensure chunks are sent
+    setInterval(() => {
+      document.body.style.backgroundColor = 
+        document.body.style.backgroundColor === 'rgb(245, 245, 245)' ? '#f5f5f5' : 'rgb(245, 245, 245)';
+    }, 3000);
+
+    console.log('[Test] Session chains test initialized');
+    console.log('[Test] Session will rotate every 2 minutes');
+    console.log('[Test] Watch for rotation messages in console');
+  </script>
+</body>
+</html>

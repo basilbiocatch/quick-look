@@ -5,11 +5,15 @@ import { startSession } from "./session.js";
 let stopFn = null;
 
 export function startRecording() {
-  if (stopFn) return;
+  if (stopFn) {
+    return;
+  }
+  
   stopFn = record({
     emit(event) {
       pushEvent(event);
     },
+    checkoutEveryNms: 30000,
     inlineStylesheet: true,
     collectFonts: true,
     recordCSSVariables: true,
@@ -33,5 +37,5 @@ export function stopRecording() {
 }
 
 export async function ensureSessionStarted() {
-  await startSession();
+  return await startSession();
 }

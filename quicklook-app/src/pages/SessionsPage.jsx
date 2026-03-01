@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Box,
   Typography,
@@ -19,13 +19,21 @@ import {
   MenuItem,
   FormControlLabel,
   Checkbox,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  FormControl,
+  InputLabel,
+  Select,
 } from "@mui/material";
 import { useNavigate, useParams } from "react-router-dom";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import SearchIcon from "@mui/icons-material/Search";
 import FilterListIcon from "@mui/icons-material/FilterList";
+import RefreshIcon from "@mui/icons-material/Refresh";
 import AddIcon from "@mui/icons-material/Add";
-import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import PlayCircleFilledIcon from "@mui/icons-material/PlayCircleFilled";
 import FlagIcon from "@mui/icons-material/Flag";
 import ScheduleIcon from "@mui/icons-material/Schedule";
 import TabIcon from "@mui/icons-material/Tab";
@@ -33,9 +41,13 @@ import DesktopWindowsIcon from "@mui/icons-material/DesktopWindows";
 import PersonOutlineIcon from "@mui/icons-material/PersonOutline";
 import LinkIcon from "@mui/icons-material/Link";
 import PlaceIcon from "@mui/icons-material/Place";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import SortIcon from "@mui/icons-material/Sort";
 import VideocamIcon from "@mui/icons-material/Videocam";
+import BookmarkIcon from "@mui/icons-material/Bookmark";
+import BookmarkAddIcon from "@mui/icons-material/BookmarkAdd";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import FiberManualRecordIcon from "@mui/icons-material/FiberManualRecord";
 import { getSessions } from "../api/quicklookApi";
 import {
   formatDuration,
@@ -46,6 +58,167 @@ import {
 } from "../utils/sessionParser";
 import { format } from "date-fns";
 import SessionSidebar from "../components/SessionSidebar";
+
+/** Text operators for string fields */
+const TEXT_OPERATORS = [
+  { value: "is", label: "is" },
+  { value: "isNot", label: "is not" },
+  { value: "contains", label: "contains" },
+  { value: "doesNotContain", label: "does not contain" },
+];
+
+/** Numeric operators for duration / page count */
+const NUMERIC_OPERATORS = [
+  { value: "atLeast", label: "at least" },
+  { value: "atMost", label: "at most" },
+  { value: "equals", label: "equals" },
+];
+
+/** Filter fields by category. valueType: 'text' | 'number'. getValue(session) returns value(s) to match. */
+const FILTER_FIELDS = [
+  {
+    category: "Sessions",
+    fields: [
+      { key: "visitedUrl", label: "Visited URL", valueType: "text", icon: LinkIcon },
+      { key: "landingUrl", label: "Landing URL", valueType: "text", icon: LinkIcon },
+      { key: "exitUrl", label: "Exit URL", valueType: "text", icon: LinkIcon },
+      { key: "duration", label: "Duration", valueType: "number", icon: ScheduleIcon },
+      { key: "pageCount", label: "Number of pages", valueType: "number", icon: TabIcon },
+    ],
+  },
+  {
+    category: "Location",
+    fields: [
+      { key: "country", label: "Country", valueType: "text", icon: PlaceIcon },
+      { key: "city", label: "City", valueType: "text", icon: PlaceIcon },
+      { key: "region", label: "State/region", valueType: "text", icon: PlaceIcon },
+      { key: "ipAddress", label: "IP", valueType: "text", icon: PlaceIcon },
+    ],
+  },
+  {
+    category: "User",
+    fields: [
+      { key: "userEmail", label: "User email", valueType: "text", icon: PersonOutlineIcon },
+      { key: "userName", label: "User name", valueType: "text", icon: PersonOutlineIcon },
+    ],
+  },
+  {
+    category: "Technology",
+    fields: [
+      { key: "browser", label: "Browser", valueType: "text", icon: DesktopWindowsIcon },
+      { key: "device", label: "Device", valueType: "text", icon: DesktopWindowsIcon },
+    ],
+  },
+];
+
+function getSessionValueForFilter(session, fieldKey) {
+  const m = session.meta || {};
+  const loc = m.location;
+  switch (fieldKey) {
+    case "visitedUrl":
+      return Array.isArray(session.pages) ? session.pages : [];
+    case "landingUrl":
+      return Array.isArray(session.pages) && session.pages.length > 0 ? [session.pages[0]] : [];
+    case "exitUrl":
+      return Array.isArray(session.pages) && session.pages.length > 0 ? [session.pages[session.pages.length - 1]] : [];
+    case "duration":
+      return session.duration != null ? session.duration : 0;
+    case "pageCount":
+      return session.pageCount != null ? session.pageCount : 0;
+    case "country":
+      return m.countryCode || (typeof loc === "object" && loc?.countryCode) || "";
+    case "city":
+      return m.city || (typeof loc === "object" && loc?.city) || "";
+    case "region":
+      return (typeof loc === "object" && loc?.regionName) || "";
+    case "ipAddress":
+      return session.ipAddress || "";
+    case "userEmail":
+      return session.user?.email || "";
+    case "userName":
+      return [session.user?.firstName, session.user?.lastName].filter(Boolean).join(" ") || "";
+    case "browser":
+      return parseBrowser(m.userAgent) || "";
+    case "device":
+      return parseDevice(m.userAgent) || "";
+    default:
+      return "";
+  }
+}
+
+function sessionMatchesFilter(session, filter) {
+  let { type: fieldKey, operator, value } = filter;
+  if (value == null || (typeof value === "string" && !value.trim())) return true;
+  if (!operator && (fieldKey === "durationMin" || fieldKey === "durationMax" || fieldKey === "pagesMin")) {
+    if (fieldKey === "durationMin") {
+      fieldKey = "duration";
+      operator = "atLeast";
+      value = typeof value === "number" ? value / 1000 : value;
+    } else if (fieldKey === "durationMax") {
+      fieldKey = "duration";
+      operator = "atMost";
+      value = typeof value === "number" ? value / 1000 : value;
+    } else {
+      fieldKey = "pageCount";
+      operator = "atLeast";
+    }
+  }
+
+  const raw = getSessionValueForFilter(session, fieldKey);
+  const strVal = String(value).toLowerCase().trim();
+
+  if (fieldKey === "duration" || fieldKey === "pageCount") {
+    const num = typeof raw === "number" ? raw : Number(raw);
+    const filterNum = fieldKey === "duration" ? Number(value) * 1000 : Number(value);
+    if (Number.isNaN(filterNum)) return true;
+    switch (operator) {
+      case "atLeast":
+        return num >= filterNum;
+      case "atMost":
+        return num <= filterNum;
+      case "equals":
+        return fieldKey === "duration" ? Math.abs(num - filterNum) < 1000 : num === filterNum;
+      default:
+        return true;
+    }
+  }
+
+  const isArray = Array.isArray(raw);
+  const strings = isArray ? raw.map((x) => String(x).toLowerCase()) : [String(raw).toLowerCase()];
+  const anyMatches = (pred) => (isArray ? strings.some(pred) : pred(strings[0]));
+  switch (operator) {
+    case "is":
+      return anyMatches((s) => s === strVal);
+    case "isNot":
+      return !anyMatches((s) => s === strVal);
+    case "contains":
+      return anyMatches((s) => s.includes(strVal));
+    case "doesNotContain":
+      return !anyMatches((s) => s.includes(strVal));
+    default:
+      return true;
+  }
+}
+
+function getFilterChipLabel(f) {
+  if (f.type === "durationMin") return `Duration ≥ ${(f.value / 1000) || 0}s`;
+  if (f.type === "durationMax") return `Duration ≤ ${(f.value / 1000) || 0}s`;
+  if (f.type === "pagesMin") return `Pages ≥ ${f.value}`;
+  if (f.label && !f.operator) return `${f.label} ${f.value}`;
+  const opLabel =
+    NUMERIC_OPERATORS.find((o) => o.value === f.operator)?.label ||
+    TEXT_OPERATORS.find((o) => o.value === f.operator)?.label ||
+    f.operator;
+  const field = FILTER_FIELDS.flatMap((c) => c.fields).find((x) => x.key === f.type);
+  const name = field?.label || f.type;
+  const val =
+    f.type === "duration" && typeof f.value === "number"
+      ? `${f.value / 1000}s`
+      : f.type === "duration"
+        ? `${String(f.value)}s`
+        : String(f.value);
+  return `${name} ${opLabel} ${val}`;
+}
 
 const DAYS_OPTIONS = [
   { label: "Last 7 days", value: 7 },
@@ -63,6 +236,7 @@ const COLUMN_KEYS = [
   "pages",
   "device",
   "location",
+  "ip",
 ];
 
 const DEFAULT_VISIBLE_COLUMNS = {
@@ -74,11 +248,31 @@ const DEFAULT_VISIBLE_COLUMNS = {
   pages: true,
   device: true,
   location: true,
+  ip: true,
 };
 
 const ROW_HEIGHT = 60;
-const COLUMN_WIDTHS = { user: 220, play: 52, date: 160, events: 64, duration: 72, pages: 56, device: 120, location: 110 };
+const COLUMN_WIDTHS = { user: 220, play: 52, date: 160, events: 64, duration: 72, pages: 56, device: 120, location: 110, ip: 120 };
 const COLUMN_GAP = 2; // mr in theme spacing units, applied consistently
+
+const SAVED_VIEWS_STORAGE_KEY = (projectKey) => `quicklook_saved_views_${projectKey || ""}`;
+
+function getSavedViewsFromStorage(projectKey) {
+  try {
+    const raw = localStorage.getItem(SAVED_VIEWS_STORAGE_KEY(projectKey));
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function saveSavedViewsToStorage(projectKey, views) {
+  try {
+    localStorage.setItem(SAVED_VIEWS_STORAGE_KEY(projectKey), JSON.stringify(views));
+  } catch (_) {}
+}
 
 export default function SessionsPage() {
   const navigate = useNavigate();
@@ -89,6 +283,7 @@ export default function SessionsPage() {
   }, [routeProjectKey, navigate]);
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("closed");
   const [total, setTotal] = useState(0);
@@ -101,6 +296,7 @@ export default function SessionsPage() {
   const [dateRangeAnchor, setDateRangeAnchor] = useState(null);
   const [filterValueModal, setFilterValueModal] = useState(null);
   const [filterInputValue, setFilterInputValue] = useState("");
+  const [filterOperator, setFilterOperator] = useState("contains");
   const [openedSessionIds, setOpenedSessionIds] = useState(() => {
     try {
       const raw = sessionStorage.getItem("quicklook_opened_sessions");
@@ -111,6 +307,49 @@ export default function SessionsPage() {
     } catch (_) {}
     return new Set();
   });
+  const [savedViews, setSavedViews] = useState([]);
+  const [saveViewDialogOpen, setSaveViewDialogOpen] = useState(false);
+  const [saveViewName, setSaveViewName] = useState("");
+  const [transitioningSessionId, setTransitioningSessionId] = useState(null);
+  const [currentTime, setCurrentTime] = useState(Date.now());
+
+  useEffect(() => {
+    setSavedViews(getSavedViewsFromStorage(projectKey));
+  }, [projectKey]);
+
+  const applySavedView = (view) => {
+    setStatus(view.status ?? "closed");
+    setDaysFilter(view.daysFilter ?? 30);
+    setSearchQuery(view.searchQuery ?? "");
+    setActiveFilters(
+      (view.filters || []).map((f, i) => ({ ...f, id: Date.now() + i }))
+    );
+  };
+
+  const saveCurrentView = () => {
+    const name = (saveViewName || "").trim();
+    if (!name) return;
+    const view = {
+      id: `view_${Date.now()}`,
+      name,
+      status,
+      daysFilter,
+      searchQuery,
+      filters: activeFilters.map(({ type, operator, label, value }) => ({ type, operator, label, value })),
+    };
+    const next = [...savedViews, view];
+    setSavedViews(next);
+    saveSavedViewsToStorage(projectKey, next);
+    setSaveViewName("");
+    setSaveViewDialogOpen(false);
+  };
+
+  const deleteSavedView = (id, e) => {
+    e?.stopPropagation?.();
+    const next = savedViews.filter((v) => v.id !== id);
+    setSavedViews(next);
+    saveSavedViewsToStorage(projectKey, next);
+  };
 
   const markSessionOpened = (sessionId) => {
     setOpenedSessionIds((prev) => {
@@ -129,14 +368,19 @@ export default function SessionsPage() {
     return { from, to };
   }, [daysFilter]);
 
-  const load = async () => {
+  const load = useCallback(async (options = {}) => {
+    const { isRefresh = false, silent = false } = options;
     if (!projectKey.trim()) {
       setSessions([]);
       setTotal(0);
       setLoading(false);
       return;
     }
-    setLoading(true);
+    if (isRefresh && !silent) {
+      setRefreshing(true);
+    } else if (!silent) {
+      setLoading(true);
+    }
     setError("");
     try {
       const res = await getSessions({
@@ -156,12 +400,38 @@ export default function SessionsPage() {
       setTotal(0);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  }, [projectKey, status, fromTo.from, fromTo.to]);
+
+  const handleRefresh = () => {
+    load({ isRefresh: true, silent: false });
   };
 
   useEffect(() => {
     load();
-  }, [projectKey, status, fromTo.from, fromTo.to]);
+    // Poll for updates when viewing active sessions or "All sessions" (refresh every 3 seconds)
+    // Also poll closed sessions (refresh every 5 seconds)
+    // Use silent refresh (no loading spinner) for polling
+    let interval;
+    if (projectKey.trim()) {
+      const pollInterval = status === "active" || status === "" ? 3000 : 5000; // More frequent for active sessions
+      interval = setInterval(() => {
+        load({ isRefresh: true, silent: true }); // Silent refresh - won't show loading spinner
+      }, pollInterval);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [load, projectKey, status]);
+
+  // Update current time every second for real-time duration calculation
+  useEffect(() => {
+    const timeInterval = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(timeInterval);
+  }, []);
 
   const filteredSessions = useMemo(() => {
     let list = sessions;
@@ -173,17 +443,7 @@ export default function SessionsPage() {
           (s.user?.email && s.user.email.toLowerCase().includes(q))
       );
     }
-    activeFilters.forEach((f) => {
-      if (f.type === "durationMin" && f.value != null) {
-        list = list.filter((s) => (s.duration || 0) >= f.value);
-      }
-      if (f.type === "durationMax" && f.value != null) {
-        list = list.filter((s) => (s.duration || 0) <= f.value);
-      }
-      if (f.type === "pagesMin" && f.value != null) {
-        list = list.filter((s) => (s.pageCount || 0) >= f.value);
-      }
-    });
+    list = list.filter((s) => activeFilters.every((f) => sessionMatchesFilter(s, f)));
     return list;
   }, [sessions, searchQuery, activeFilters]);
 
@@ -218,10 +478,32 @@ export default function SessionsPage() {
   const addFilter = (filter) => {
     setActiveFilters((prev) => [...prev, { id: Date.now(), ...filter }]);
     setFilterPanelOpen(false);
+    setFilterValueModal(null);
   };
 
   const removeFilter = (id) => {
     setActiveFilters((prev) => prev.filter((f) => f.id !== id));
+  };
+
+  const submitFilterValue = () => {
+    if (!filterValueModal) return;
+    const { type, valueType } = filterValueModal;
+    let value;
+    if (valueType === "number") {
+      const v = parseInt(filterInputValue, 10);
+      if (Number.isNaN(v) || v < 0) return;
+      value = type === "duration" ? v : v;
+    } else {
+      const v = filterInputValue.trim();
+      if (!v) return;
+      value = v;
+    }
+    addFilter({
+      type,
+      operator: filterOperator,
+      value,
+      label: filterValueModal.label,
+    });
   };
 
   const locationDisplay = (session) => {
@@ -235,12 +517,7 @@ export default function SessionsPage() {
 
   return (
     <Box sx={{ display: "flex", minHeight: "100vh" }}>
-      <SessionSidebar
-        projectKey={projectKey}
-        status={status}
-        setStatus={setStatus}
-        onOpenFilterPanel={() => setFilterPanelOpen(true)}
-      />
+      <SessionSidebar status={status} setStatus={setStatus} />
 
       <Box sx={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         {/* Top bar: date range, search, + Filter, column filter icon — fixed heights */}
@@ -325,6 +602,19 @@ export default function SessionsPage() {
           <Box sx={{ flex: 1 }} />
           <IconButton
             size="small"
+            onClick={handleRefresh}
+            aria-label="Refresh sessions"
+            disabled={loading || refreshing}
+            sx={{ color: "text.secondary" }}
+          >
+            {refreshing ? (
+              <CircularProgress size={20} sx={{ color: "text.secondary" }} />
+            ) : (
+              <RefreshIcon sx={{ fontSize: 20 }} />
+            )}
+          </IconButton>
+          <IconButton
+            size="small"
             onClick={(e) => setColumnFilterAnchor(e.currentTarget)}
             aria-label="Column filter"
             sx={{ color: "text.secondary" }}
@@ -341,7 +631,7 @@ export default function SessionsPage() {
               <MenuItem key={key} dense onClick={() => toggleColumn(key)}>
                 <FormControlLabel
                   control={<Checkbox size="small" checked={!!visibleColumns[key]} readOnly />}
-                  label={key.charAt(0).toUpperCase() + key.slice(1)}
+                  label={key === "ip" ? "IP" : key.charAt(0).toUpperCase() + key.slice(1)}
                   sx={{ pointerEvents: "none" }}
                 />
               </MenuItem>
@@ -371,13 +661,53 @@ export default function SessionsPage() {
                     <Chip
                       key={f.id}
                       size="small"
-                      label={f.type === "durationMin" ? `Duration ≥ ${(f.value / 1000) || 0}s` : f.type === "pagesMin" ? `Pages ≥ ${f.value}` : `${f.label}: ${f.value}`}
+                      label={getFilterChipLabel(f)}
                       onDelete={() => removeFilter(f.id)}
                       sx={{ fontSize: "0.8125rem" }}
                     />
                   ))}
                 </Box>
               )}
+
+              {/* Saved views: one-click filter presets */}
+              <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 1, mb: 2 }}>
+                <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ fontSize: "0.6875rem", letterSpacing: "0.06em", mr: 0.5 }}>
+                  SAVED VIEWS
+                </Typography>
+                {savedViews.map((view) => (
+                  <Chip
+                    key={view.id}
+                    icon={<BookmarkIcon sx={{ fontSize: 16, color: "primary.main" }} />}
+                    label={view.name}
+                    onClick={() => applySavedView(view)}
+                    onDelete={(e) => deleteSavedView(view.id, e)}
+                    deleteIcon={<DeleteOutlineIcon sx={{ fontSize: 18 }} />}
+                    size="small"
+                    variant="outlined"
+                    sx={{
+                      fontSize: "0.8125rem",
+                      borderColor: "divider",
+                      "&:hover": {
+                        borderColor: "primary.main",
+                        bgcolor: "rgba(190,149,250,0.08)",
+                      },
+                    }}
+                  />
+                ))}
+                <Button
+                  size="small"
+                  startIcon={<BookmarkAddIcon sx={{ fontSize: 18 }} />}
+                  onClick={() => { setSaveViewName(""); setSaveViewDialogOpen(true); }}
+                  sx={{
+                    textTransform: "none",
+                    fontSize: "0.8125rem",
+                    color: "text.secondary",
+                    "&:hover": { color: "primary.main", bgcolor: "rgba(190,149,250,0.08)" },
+                  }}
+                >
+                  Save current view
+                </Button>
+              </Box>
 
               {/* Header: title left; summarizer + filter icon right, aligned */}
               <Box
@@ -392,7 +722,7 @@ export default function SessionsPage() {
                 }}
               >
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
-                  <CheckCircleIcon color="primary" sx={{ fontSize: 28 }} />
+                  <AutoAwesomeIcon color="primary" sx={{ fontSize: 28 }} />
                   <Typography variant="h5" fontWeight={700} sx={{ fontSize: "1.25rem" }}>
                     {statusLabel}
                   </Typography>
@@ -508,9 +838,16 @@ export default function SessionsPage() {
                         </Box>
                       )}
                       {visibleColumns.location && (
-                        <Box sx={{ minWidth: COLUMN_WIDTHS.location }}>
+                        <Box sx={{ minWidth: COLUMN_WIDTHS.location, mr: COLUMN_GAP }}>
                           <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ fontSize: "0.75rem", letterSpacing: "0.05em" }}>
                             LOCATION
+                          </Typography>
+                        </Box>
+                      )}
+                      {visibleColumns.ip && (
+                        <Box sx={{ minWidth: COLUMN_WIDTHS.ip }}>
+                          <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ fontSize: "0.75rem", letterSpacing: "0.05em" }}>
+                            IP
                           </Typography>
                         </Box>
                       )}
@@ -520,12 +857,18 @@ export default function SessionsPage() {
                         const loc = locationDisplay(session);
                         const userKey = session.user?.email || session.sessionId || "";
                         const sessionsForUser = sessionCountByUser.get(userKey) ?? 1;
+                        const isLive = session.status === "active";
+                        const isTransitioning = transitioningSessionId === session.sessionId;
                         return (
                           <ListItemButton
                             key={session.sessionId}
                             onClick={() => {
+                              setTransitioningSessionId(session.sessionId);
                               markSessionOpened(session.sessionId);
-                              navigate(`/sessions/${session.sessionId}`);
+                              // Add a brief delay for the fade-out animation
+                              setTimeout(() => {
+                                navigate(`/sessions/${session.sessionId}`);
+                              }, 250);
                             }}
                             sx={{
                               minHeight: ROW_HEIGHT,
@@ -534,10 +877,17 @@ export default function SessionsPage() {
                               px: 2,
                               borderBottom: idx < filteredSessions.length - 1 ? "1px solid" : "none",
                               borderColor: "divider",
-                              bgcolor: openedSessionIds.has(session.sessionId)
-                                ? (theme) => (theme.palette.mode === "dark" ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.06)")
+                              background: openedSessionIds.has(session.sessionId)
+                                ? "linear-gradient(90deg, rgba(190,149,250,0.18) 0%, rgba(190,149,250,0.08) 50%, rgba(147,112,219,0.06) 100%)"
                                 : (theme) => (theme.palette.mode === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.02)"),
-                              "&:hover": { bgcolor: "action.selected" },
+                              boxShadow: openedSessionIds.has(session.sessionId) ? "inset 0 0 0 1px rgba(190,149,250,0.2)" : "none",
+                              transition: "background 0.25s ease, box-shadow 0.25s ease, opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
+                              opacity: isTransitioning ? 0 : 1,
+                              transform: isTransitioning ? "translateX(20px) scale(0.98)" : "translateX(0) scale(1)",
+                              "&:hover": { 
+                                bgcolor: "action.selected",
+                                transform: isTransitioning ? "translateX(20px) scale(0.98)" : "translateX(2px) scale(1)",
+                              },
                               display: "flex",
                               alignItems: "center",
                             }}
@@ -551,6 +901,51 @@ export default function SessionsPage() {
                                     {sessionsForUser}
                                   </Typography>
                                 </Box>
+                                {isLive && status === "" && (
+                                  <Box
+                                    sx={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: 0.5,
+                                      ml: 0.5,
+                                      "@keyframes pulse": {
+                                        "0%": {
+                                          opacity: 1,
+                                          transform: "scale(1)",
+                                        },
+                                        "50%": {
+                                          opacity: 0.5,
+                                          transform: "scale(1.1)",
+                                        },
+                                        "100%": {
+                                          opacity: 1,
+                                          transform: "scale(1)",
+                                        },
+                                      },
+                                      animation: "pulse 2s ease-in-out infinite",
+                                    }}
+                                  >
+                                    <FiberManualRecordIcon
+                                      sx={{
+                                        fontSize: 10,
+                                        color: "#ef4444",
+                                        filter: "drop-shadow(0 0 4px rgba(239, 68, 68, 0.6))",
+                                      }}
+                                    />
+                                    <Typography
+                                      variant="caption"
+                                      sx={{
+                                        fontSize: "0.6875rem",
+                                        fontWeight: 600,
+                                        color: "#ef4444",
+                                        letterSpacing: "0.05em",
+                                        textTransform: "uppercase",
+                                      }}
+                                    >
+                                      Live
+                                    </Typography>
+                                  </Box>
+                                )}
                                 <Typography variant="body2" noWrap sx={{ fontSize: "0.875rem", maxWidth: 140 }} title={session.sessionId}>
                                   {String(session.sessionId).slice(0, 16)}{session.sessionId.length > 16 ? "…" : ""}
                                 </Typography>
@@ -563,12 +958,15 @@ export default function SessionsPage() {
                                   color="primary"
                                   onClick={(e) => {
                                     e.stopPropagation();
+                                    setTransitioningSessionId(session.sessionId);
                                     markSessionOpened(session.sessionId);
-                                    navigate(`/sessions/${session.sessionId}`);
+                                    setTimeout(() => {
+                                      navigate(`/sessions/${session.sessionId}`);
+                                    }, 200);
                                   }}
                                   sx={{ p: 0.5 }}
                                 >
-                                  <PlayArrowIcon sx={{ fontSize: 20 }} />
+                                  <PlayCircleFilledIcon sx={{ fontSize: 22 }} />
                                 </IconButton>
                               </Box>
                             )}
@@ -592,7 +990,15 @@ export default function SessionsPage() {
                               <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, minWidth: COLUMN_WIDTHS.duration, mr: COLUMN_GAP }}>
                                 <ScheduleIcon sx={{ fontSize: 16, color: "text.secondary" }} />
                                 <Typography variant="body2" sx={{ fontSize: "0.875rem" }}>
-                                  {formatDuration(session.duration)}
+                                  {(() => {
+                                    // Calculate duration dynamically for active sessions
+                                    if (session.status === "active" && session.createdAt) {
+                                      const createdAt = new Date(session.createdAt).getTime();
+                                      const liveDuration = currentTime - createdAt;
+                                      return formatDuration(liveDuration);
+                                    }
+                                    return formatDuration(session.duration);
+                                  })()}
                                 </Typography>
                               </Box>
                             )}
@@ -616,7 +1022,7 @@ export default function SessionsPage() {
                               </Box>
                             )}
                             {visibleColumns.location && (
-                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, minWidth: COLUMN_WIDTHS.location }}>
+                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, minWidth: COLUMN_WIDTHS.location, mr: COLUMN_GAP }}>
                                 {loc.flag && (
                                   <Typography component="span" sx={{ fontSize: "1rem", lineHeight: 1 }}>
                                     {loc.flag}
@@ -624,6 +1030,13 @@ export default function SessionsPage() {
                                 )}
                                 <Typography variant="body2" noWrap sx={{ fontSize: "0.875rem" }}>
                                   {loc.text}
+                                </Typography>
+                              </Box>
+                            )}
+                            {visibleColumns.ip && (
+                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, minWidth: COLUMN_WIDTHS.ip }}>
+                                <Typography variant="body2" sx={{ fontFamily: "monospace", fontSize: "0.875rem" }} title={session.ipAddress || ""}>
+                                  {session.ipAddress || "—"}
                                 </Typography>
                               </Box>
                             )}
@@ -661,52 +1074,37 @@ export default function SessionsPage() {
             <span style={{ fontSize: 18 }}>×</span>
           </IconButton>
         </Box>
-        <TextField
-          size="small"
-          placeholder="Looking for something?"
-          fullWidth
-          sx={{ m: 2, mt: 2 }}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon fontSize="small" />
-              </InputAdornment>
-            ),
-          }}
-        />
-        <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ px: 2, pt: 1, display: "block", letterSpacing: "0.05em" }}>
-          SESSIONS
-        </Typography>
-        <List dense>
-          <ListItemButton onClick={() => { setFilterValueModal({ type: "durationMin", label: "Duration (min seconds)" }); setFilterInputValue(""); }}>
-            <ListItemIcon sx={{ minWidth: 32 }}><ScheduleIcon fontSize="small" /></ListItemIcon>
-            <ListItemText primary="Duration" />
-            <span style={{ opacity: 0.5 }}>›</span>
-          </ListItemButton>
-          <ListItemButton onClick={() => { setFilterValueModal({ type: "pagesMin", label: "Pages (min)" }); setFilterInputValue(""); }}>
-            <ListItemIcon sx={{ minWidth: 32 }}><TabIcon fontSize="small" /></ListItemIcon>
-            <ListItemText primary="Number of pages per visit" />
-            <span style={{ opacity: 0.5 }}>›</span>
-          </ListItemButton>
-          <ListItemButton>
-            <ListItemIcon sx={{ minWidth: 32 }}><LinkIcon fontSize="small" /></ListItemIcon>
-            <ListItemText primary="Visited URL" />
-            <span style={{ opacity: 0.5 }}>›</span>
-          </ListItemButton>
-        </List>
-        <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ px: 2, pt: 2, display: "block", letterSpacing: "0.05em" }}>
-          LOCATION
-        </Typography>
-        <List dense>
-          <ListItemButton>
-            <ListItemIcon sx={{ minWidth: 32 }}><PlaceIcon fontSize="small" /></ListItemIcon>
-            <ListItemText primary="City" />
-            <span style={{ opacity: 0.5 }}>›</span>
-          </ListItemButton>
-        </List>
+        {FILTER_FIELDS.map((group) => (
+          <Box key={group.category} sx={{ pb: 1 }}>
+            <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ px: 2, pt: group.category === "Sessions" ? 2 : 2, display: "block", letterSpacing: "0.05em" }}>
+              {group.category.toUpperCase()}
+            </Typography>
+            <List dense>
+              {group.fields.map((field) => {
+                const Icon = field.icon;
+                return (
+                  <ListItemButton
+                    key={field.key}
+                    onClick={() => {
+                      setFilterValueModal({ type: field.key, label: field.label, valueType: field.valueType });
+                      setFilterInputValue("");
+                      setFilterOperator(field.valueType === "number" ? "atLeast" : "contains");
+                    }}
+                  >
+                    <ListItemIcon sx={{ minWidth: 32 }}>
+                      <Icon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText primary={field.label} />
+                    <span style={{ opacity: 0.5 }}>›</span>
+                  </ListItemButton>
+                );
+              })}
+            </List>
+          </Box>
+        ))}
       </Drawer>
 
-      {/* Simple modal to set filter value */}
+      {/* Filter value modal: operator + value */}
       {filterValueModal && (
         <Box
           sx={{
@@ -720,47 +1118,83 @@ export default function SessionsPage() {
           }}
           onClick={() => setFilterValueModal(null)}
         >
-          <Paper
-            sx={{ p: 2, minWidth: 280 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Typography variant="subtitle2" sx={{ mb: 2 }}>{filterValueModal.label}</Typography>
+          <Paper sx={{ p: 2, minWidth: 320 }} onClick={(e) => e.stopPropagation()}>
+            <Typography variant="subtitle2" sx={{ mb: 2 }}>
+              {filterValueModal.label}
+            </Typography>
+            <FormControl size="small" fullWidth sx={{ mb: 2 }}>
+              <InputLabel>Operator</InputLabel>
+              <Select
+                value={filterOperator}
+                label="Operator"
+                onChange={(e) => setFilterOperator(e.target.value)}
+              >
+                {(filterValueModal.valueType === "number" ? NUMERIC_OPERATORS : TEXT_OPERATORS).map((op) => (
+                  <MenuItem key={op.value} value={op.value}>
+                    {op.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
             <TextField
-              type="number"
+              type={filterValueModal.valueType === "number" ? "number" : "text"}
               size="small"
               fullWidth
               value={filterInputValue}
               onChange={(e) => setFilterInputValue(e.target.value)}
-              placeholder={filterValueModal.type === "durationMin" ? "Seconds" : "Min pages"}
-              inputProps={{ min: 0 }}
+              placeholder={
+                filterValueModal.valueType === "number"
+                  ? filterValueModal.type === "duration"
+                    ? "Seconds"
+                    : "Number"
+                  : "Enter value…"
+              }
+              inputProps={filterValueModal.valueType === "number" ? { min: 0 } : {}}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
-                  const v = parseInt(filterInputValue, 10);
-                  const value = filterValueModal.type === "durationMin" ? (v * 1000) : v;
-                  if (!Number.isNaN(value) && value >= 0) addFilter({ type: filterValueModal.type, label: filterValueModal.label, value });
-                  setFilterValueModal(null);
+                  e.preventDefault();
+                  submitFilterValue();
                 }
               }}
               sx={{ mb: 2 }}
             />
             <Box sx={{ display: "flex", gap: 1, justifyContent: "flex-end" }}>
-              <Button size="small" onClick={() => setFilterValueModal(null)}>Cancel</Button>
-              <Button
-                size="small"
-                variant="contained"
-                onClick={() => {
-                  const v = parseInt(filterInputValue, 10);
-                  const value = filterValueModal.type === "durationMin" ? (v * 1000) : v;
-                  if (!Number.isNaN(value) && value >= 0) addFilter({ type: filterValueModal.type, label: filterValueModal.label, value });
-                  setFilterValueModal(null);
-                }}
-              >
+              <Button size="small" onClick={() => setFilterValueModal(null)}>
+                Cancel
+              </Button>
+              <Button size="small" variant="contained" onClick={submitFilterValue}>
                 Add filter
               </Button>
             </Box>
           </Paper>
         </Box>
       )}
+
+      {/* Save current view dialog */}
+      <Dialog open={saveViewDialogOpen} onClose={() => setSaveViewDialogOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Save current view</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            Save the current filters (date range, segment, search, duration/pages) as a preset you can apply with one click.
+          </Typography>
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            label="View name"
+            placeholder="e.g. Long sessions, Last 7 days"
+            value={saveViewName}
+            onChange={(e) => setSaveViewName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && saveCurrentView()}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSaveViewDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={saveCurrentView} disabled={!saveViewName.trim()}>
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

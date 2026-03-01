@@ -52,3 +52,22 @@ Session recording product: SDK, API server, and session viewer app. All runs on 
 ## Release
 
 Separate build and deploy for quicklook-server and quicklook-app (e.g. own App Engine services or Docker). No shared pipeline with nobex-interactive.
+
+When building the app for production (served at `/app`), set the base path so assets and the logo resolve correctly:
+```bash
+cd quicklook-app
+VITE_APP_BASE=/app npm run build
+```
+Then copy the contents of `dist/` into `quicklook-server/public/app/`.
+
+
+
+## Where everything lives:
+SDK (for embedding on customer sites):
+https://quicklook-server-wof6xnmega-uc.a.run.app/quicklook-sdk.js
+https://quicklook-server-wof6xnmega-uc.a.run.app/compress.worker.js
+React App (session viewer):
+https://quicklook-server-wof6xnmega-uc.a.run.app/app
+API endpoints:
+https://quicklook-server-wof6xnmega-uc.a.run.app/api/quicklook/*
+Health check: https://quicklook-server-wof6xnmega-uc.a.run.app/health

@@ -50,9 +50,8 @@ export default function PlayerControls({
     onCurrentTimeChange(ms);
     onPlayingChange?.(false);
     try {
-      const replayer = getReplayer();
-      if (replayer) replayer.pause(ms);
-      else if (playerRef?.current?.goto) playerRef.current.goto(ms);
+      const wrapper = playerRef?.current;
+      if (wrapper?.goto) wrapper.goto(ms, false);
     } catch (e) {}
   };
   const handleBack5 = () => {
@@ -60,9 +59,8 @@ export default function PlayerControls({
     onCurrentTimeChange(t);
     onPlayingChange?.(false);
     try {
-      const replayer = getReplayer();
-      if (replayer) replayer.pause(t);
-      else if (playerRef?.current?.goto) playerRef.current.goto(t);
+      const wrapper = playerRef?.current;
+      if (wrapper?.goto) wrapper.goto(t, false);
     } catch (e) {}
   };
   const togglePlay = () => {
@@ -71,12 +69,10 @@ export default function PlayerControls({
       return;
     }
     try {
-      const replayer = getReplayer();
-      if (replayer) {
-        if (playing) replayer.pause();
-        else replayer.play();
-      } else if (playerRef?.current?.toggle) {
-        playerRef.current.toggle();
+      const wrapper = playerRef?.current;
+      if (wrapper) {
+        if (playing) wrapper.pause?.();
+        else wrapper.play?.();
       }
       onPlayingChange(!playing);
     } catch (e) {}
@@ -100,6 +96,7 @@ export default function PlayerControls({
   return (
     <Box
       sx={{
+        mt: 1.5,
         borderTop: "1px solid",
         borderColor: "divider",
         bgcolor: "background.paper",

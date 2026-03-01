@@ -10,6 +10,7 @@ import {
   Link as MuiLink,
 } from "@mui/material";
 import { useAuth } from "../contexts/AuthContext";
+import { getPublicAssetUrl } from "../utils/baseUrl";
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -71,7 +72,7 @@ export default function SignupPage() {
         }}
       >
         <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 1.25, mb: 3 }}>
-          <img src="/logo.png" alt="" style={{ height: 36, width: 36, display: "block" }} />
+          <img src={getPublicAssetUrl("logo.png")} alt="" style={{ height: 36, width: 36, display: "block" }} />
           <Typography variant="h5" fontWeight={700}>
             Quicklook
           </Typography>

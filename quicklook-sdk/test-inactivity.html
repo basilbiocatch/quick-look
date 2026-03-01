@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quicklook SDK - Inactivity Test</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      margin-top: 0;
+    }
+    .status {
+      padding: 15px;
+      border-radius: 5px;
+      margin: 20px 0;
+      font-weight: 500;
+    }
+    .status.active {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    .status.paused {
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffeaa7;
+    }
+    .info {
+      background: #e7f3ff;
+      padding: 15px;
+      border-radius: 5px;
+      margin: 20px 0;
+      border-left: 4px solid #2196F3;
+    }
+    .info h3 {
+      margin-top: 0;
+      color: #1976D2;
+    }
+    .info ul {
+      margin: 10px 0;
+      padding-left: 20px;
+    }
+    .info li {
+      margin: 8px 0;
+    }
+    button {
+      background: #2196F3;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-right: 10px;
+    }
+    button:hover {
+      background: #1976D2;
+    }
+    .code {
+      background: #f4f4f4;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: monospace;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎥 Quicklook SDK - Inactivity Test</h1>
+    
+    <div class="status active" id="status">
+      ✅ Recording Active - Session ID: <span id="sessionId">Loading...</span>
+    </div>
+
+    <div class="info">
+      <h3>How to Test Inactivity Detection:</h3>
+      <ul>
+        <li><strong>Tab Switching:</strong> Switch to another browser tab. Recording will pause automatically.</li>
+        <li><strong>Inactivity Timeout:</strong> Don't move your mouse, type, or scroll for 30 seconds (configured below). Recording will pause.</li>
+        <li><strong>Resume:</strong> Return to this tab or move your mouse to resume recording automatically.</li>
+        <li><strong>Console:</strong> Open browser DevTools console to see pause/resume messages.</li>
+        <li><strong>Session Status:</strong> Check server API - session should remain "active" even after pause/resume cycles.</li>
+      </ul>
+    </div>
+
+    <div style="margin: 20px 0;">
+      <button onclick="triggerActivity()">Trigger Activity (Reset Timer)</button>
+      <button onclick="checkStatus()">Check Status</button>
+    </div>
+
+    <div style="margin-top: 20px; color: #666; font-size: 14px;">
+      <p><strong>Current Configuration:</strong></p>
+      <ul>
+        <li>Inactivity Timeout: <span class="code">30 seconds</span> (for testing)</li>
+        <li>Pause on Hidden: <span class="code">true</span></li>
+        <li>API URL: <span class="code">http://localhost:3080</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <script src="dist/quicklook-sdk.js"></script>
+  <script>
+    // Initialize Quicklook with short inactivity timeout for testing
+    window.quicklook("init", "test-project-key", {
+      apiUrl: "http://localhost:3080",
+      inactivityTimeout: 30000, // 30 seconds for testing (default is 5 minutes)
+      pauseOnHidden: true,
+      retentionDays: 1
+    });
+
+    // Display session ID
+    setTimeout(() => {
+      const sessionId = window.quicklook.sessionId;
+      document.getElementById('sessionId').textContent = sessionId || 'Not started';
+    }, 1000);
+
+    // Monitor visibility changes
+    document.addEventListener('visibilitychange', () => {
+      const status = document.getElementById('status');
+      if (document.hidden) {
+        status.className = 'status paused';
+        status.innerHTML = '⏸️ Recording Paused - Tab is hidden';
+        console.log('[Test] Tab hidden - recording should pause');
+      } else {
+        status.className = 'status active';
+        status.innerHTML = '✅ Recording Active - Tab is visible';
+        console.log('[Test] Tab visible - recording should resume');
+      }
+    });
+
+    function triggerActivity() {
+      console.log('[Test] Activity triggered - inactivity timer reset');
+      alert('Activity triggered! Inactivity timer has been reset.');
+    }
+
+    async function checkStatus() {
+      const sessionId = window.quicklook.sessionId;
+      const isHidden = document.hidden;
+      console.log('[Test] Status check:', {
+        sessionId,
+        tabHidden: isHidden,
+        timestamp: new Date().toISOString()
+      });
+      
+      // Fetch session status from server
+      if (sessionId) {
+        try {
+          const response = await fetch(`http://localhost:3080/api/quicklook/sessions/${sessionId}`, {
+            headers: {
+              'Authorization': 'Bearer YOUR_API_KEY' // Update with your API key if needed
+            }
+          });
+          const data = await response.json();
+          if (data.success && data.data) {
+            console.log('[Test] Server session status:', {
+              status: data.data.status,
+              chunkCount: data.data.chunkCount,
+              pageCount: data.data.pageCount,
+              duration: data.data.duration
+            });
+            alert(`Session ID: ${sessionId}\nTab Hidden: ${isHidden}\n\nServer Status: ${data.data.status}\nChunks: ${data.data.chunkCount}\n\nCheck console for more details.`);
+          } else {
+            alert(`Session ID: ${sessionId}\nTab Hidden: ${isHidden}\n\nCould not fetch server status (auth required)\n\nCheck console for more details.`);
+          }
+        } catch (error) {
+          console.error('[Test] Failed to fetch session status:', error);
+          alert(`Session ID: ${sessionId}\nTab Hidden: ${isHidden}\n\nCheck console for more details.`);
+        }
+      } else {
+        alert(`Session ID: ${sessionId}\nTab Hidden: ${isHidden}\n\nCheck console for more details.`);
+      }
+    }
+
+    // Log activity events for debugging
+    let lastActivity = Date.now();
+    ['mousedown', 'keydown', 'scroll', 'touchstart'].forEach(event => {
+      document.addEventListener(event, () => {
+        const now = Date.now();
+        const timeSinceLastActivity = now - lastActivity;
+        if (timeSinceLastActivity > 5000) { // Only log if more than 5 seconds since last activity
+          console.log(`[Test] User activity detected: ${event} (${timeSinceLastActivity}ms since last)`);
+        }
+        lastActivity = now;
+      }, { passive: true });
+    });
+
+    console.log('[Test] Quicklook SDK initialized with inactivity detection');
+    console.log('[Test] Try these tests:');
+    console.log('  1. Switch to another tab and come back');
+    console.log('  2. Wait 30 seconds without any activity');
+    console.log('  3. Move your mouse to resume recording');
+  </script>
+</body>
+</html>

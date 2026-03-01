@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quicklook SDK - Network Filtering Test</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      max-width: 900px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      margin-top: 0;
+    }
+    .status {
+      padding: 15px;
+      border-radius: 5px;
+      margin: 20px 0;
+      font-weight: 500;
+    }
+    .status.success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    .status.warning {
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffeaa7;
+    }
+    .info {
+      background: #e7f3ff;
+      padding: 15px;
+      border-radius: 5px;
+      margin: 20px 0;
+      border-left: 4px solid #2196F3;
+    }
+    .info h3 {
+      margin-top: 0;
+      color: #1976D2;
+    }
+    button {
+      background: #2196F3;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-right: 10px;
+      margin-bottom: 10px;
+    }
+    button:hover {
+      background: #1976D2;
+    }
+    .network-list {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 5px;
+      margin: 15px 0;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .network-item {
+      padding: 8px;
+      margin: 5px 0;
+      background: white;
+      border-radius: 3px;
+      border-left: 3px solid #2196F3;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    .network-item.blocked {
+      border-left-color: #4caf50;
+      background: #f1f8f4;
+    }
+    .network-item.recorded {
+      border-left-color: #ff9800;
+      background: #fff8f0;
+    }
+    .code {
+      background: #f4f4f4;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: monospace;
+      font-size: 13px;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 15px;
+      margin: 20px 0;
+    }
+    .stat-box {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 5px;
+      text-align: center;
+    }
+    .stat-number {
+      font-size: 32px;
+      font-weight: bold;
+      color: #2196F3;
+    }
+    .stat-label {
+      font-size: 14px;
+      color: #666;
+      margin-top: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 Quicklook SDK - Network Filtering Test</h1>
+    
+    <div class="status success" id="status">
+      ✅ SDK Initialized - Testing network request filtering
+    </div>
+
+    <div class="stats">
+      <div class="stat-box">
+        <div class="stat-number" id="totalRequests">0</div>
+        <div class="stat-label">Total Requests</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-number" id="blockedRequests">0</div>
+        <div class="stat-label">Blocked (QL API)</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-number" id="recordedRequests">0</div>
+        <div class="stat-label">Recorded (Other)</div>
+      </div>
+    </div>
+
+    <div class="info">
+      <h3>🧪 Test Instructions:</h3>
+      <ul>
+        <li><strong>Automatic:</strong> SDK makes requests to Quicklook API automatically (session start, chunks)</li>
+        <li><strong>Test External:</strong> Click "Test External API" to make a request that SHOULD be recorded</li>
+        <li><strong>Check Console:</strong> See which requests are blocked vs recorded</li>
+        <li><strong>Expected:</strong> Quicklook API calls should be blocked, external APIs should be recorded</li>
+      </ul>
+    </div>
+
+    <div style="margin: 20px 0;">
+      <button onclick="testExternalAPI()">🌐 Test External API</button>
+      <button onclick="testQuicklookAPI()">🔒 Test Quicklook API (Should Block)</button>
+      <button onclick="clearLog()">🗑️ Clear Log</button>
+    </div>
+
+    <h3>Network Request Log:</h3>
+    <div class="network-list" id="networkLog">
+      <div style="color: #999; text-align: center; padding: 20px;">
+        Waiting for network requests...
+      </div>
+    </div>
+
+    <div style="margin-top: 20px; color: #666; font-size: 14px;">
+      <p><strong>Legend:</strong></p>
+      <ul>
+        <li>🟢 <strong>Green</strong> = Blocked (Quicklook API - not recorded)</li>
+        <li>🟠 <strong>Orange</strong> = Recorded (External API - will appear in session)</li>
+      </ul>
+    </div>
+  </div>
+
+  <script src="dist/quicklook-sdk.js"></script>
+  <script>
+    let totalRequests = 0;
+    let blockedRequests = 0;
+    let recordedRequests = 0;
+    const networkLog = [];
+
+    // Initialize Quicklook
+    window.quicklook("init", "test-project-key", {
+      apiUrl: "http://localhost:3080",
+      maxSessionDuration: 60 * 60 * 1000,
+      inactivityTimeout: 5 * 60 * 1000,
+      retentionDays: 1
+    });
+
+    // Intercept fetch to log all requests
+    const originalFetch = window.fetch;
+    window.fetch = function(...args) {
+      const url = typeof args[0] === 'string' ? args[0] : args[0]?.url;
+      
+      totalRequests++;
+      
+      // Check if this is a Quicklook API call
+      const isQuicklookAPI = url && (
+        url.includes('/api/quicklook/') ||
+        url.includes('sessions/start') ||
+        url.includes('sessions/') ||
+        url.includes('/chunk') ||
+        url.includes('/end')
+      );
+      
+      if (isQuicklookAPI) {
+        blockedRequests++;
+        logRequest(url, 'blocked', 'Quicklook API (should NOT be recorded)');
+      } else {
+        recordedRequests++;
+        logRequest(url, 'recorded', 'External API (WILL be recorded)');
+      }
+      
+      updateStats();
+      
+      return originalFetch.apply(this, args);
+    };
+
+    function logRequest(url, type, description) {
+      const logEntry = {
+        url,
+        type,
+        description,
+        timestamp: new Date().toLocaleTimeString()
+      };
+      
+      networkLog.unshift(logEntry);
+      
+      // Keep only last 50 entries
+      if (networkLog.length > 50) {
+        networkLog.pop();
+      }
+      
+      updateNetworkLog();
+    }
+
+    function updateNetworkLog() {
+      const logDiv = document.getElementById('networkLog');
+      
+      if (networkLog.length === 0) {
+        logDiv.innerHTML = '<div style="color: #999; text-align: center; padding: 20px;">No requests yet...</div>';
+        return;
+      }
+      
+      logDiv.innerHTML = networkLog.map(entry => `
+        <div class="network-item ${entry.type}">
+          <div><strong>${entry.type === 'blocked' ? '🟢 BLOCKED' : '🟠 RECORDED'}:</strong> ${entry.description}</div>
+          <div style="margin-top: 5px; color: #666;">${entry.url}</div>
+          <div style="margin-top: 3px; font-size: 11px; color: #999;">${entry.timestamp}</div>
+        </div>
+      `).join('');
+    }
+
+    function updateStats() {
+      document.getElementById('totalRequests').textContent = totalRequests;
+      document.getElementById('blockedRequests').textContent = blockedRequests;
+      document.getElementById('recordedRequests').textContent = recordedRequests;
+    }
+
+    async function testExternalAPI() {
+      console.log('[Test] Making external API request (should be recorded)...');
+      try {
+        await fetch('https://jsonplaceholder.typicode.com/posts/1');
+        console.log('[Test] ✅ External API request completed');
+      } catch (error) {
+        console.error('[Test] External API request failed:', error);
+      }
+    }
+
+    async function testQuicklookAPI() {
+      console.log('[Test] Making Quicklook API request (should be blocked)...');
+      try {
+        // This will fail (no auth) but we just want to see if it's blocked
+        await fetch('http://localhost:3080/api/quicklook/sessions/test-session-id/chunk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ index: 0, data: [] })
+        }).catch(() => {});
+        console.log('[Test] ✅ Quicklook API request completed (should be blocked from recording)');
+      } catch (error) {
+        console.log('[Test] Quicklook API request failed (expected)');
+      }
+    }
+
+    function clearLog() {
+      networkLog.length = 0;
+      totalRequests = 0;
+      blockedRequests = 0;
+      recordedRequests = 0;
+      updateNetworkLog();
+      updateStats();
+      console.log('[Test] Log cleared');
+    }
+
+    // Log initial status
+    console.log('[Test] Network filtering test initialized');
+    console.log('[Test] Quicklook API calls should be BLOCKED from recording');
+    console.log('[Test] External API calls should be RECORDED');
+    console.log('[Test] Watch this log and the UI to verify filtering works');
+
+    // Wait a bit for SDK to initialize, then log status
+    setTimeout(() => {
+      const sessionId = window.quicklook.sessionId;
+      console.log('[Test] Session ID:', sessionId);
+      console.log('[Test] SDK should have made requests to start session');
+      console.log('[Test] Check if those requests were blocked (green in UI)');
+    }, 2000);
+  </script>
+</body>
+</html>

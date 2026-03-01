@@ -91,6 +91,17 @@ export function getEventMarksFromEvents(events, maxMarks = 150) {
   return Array.from({ length: maxMarks }, (_, i) => sorted[Math.round(i * step)]);
 }
 
+/** Normalize URL to page only (origin + pathname), no search or hash. Used for exclusion matching. */
+export function urlPageKey(url) {
+  if (!url || typeof url !== "string") return url || "";
+  try {
+    const u = new URL(url);
+    return u.origin + (u.pathname || "/");
+  } catch {
+    return url;
+  }
+}
+
 /** Get list of page (URL) changes for navigation: { timeMs, url } */
 export function getPagesFromEvents(events) {
   if (!Array.isArray(events)) return [];

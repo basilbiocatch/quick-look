@@ -13,6 +13,11 @@ const sessionSchema = new mongoose.Schema(
     retentionDays: { type: Number, default: 30 },
     expiresAt: { type: Date, index: true },
     ipAddress: { type: String },
+    // Session chain fields for linking split sessions
+    sessionChainId: { type: String, index: true },
+    parentSessionId: { type: String, index: true },
+    sequenceNumber: { type: Number, default: 1 },
+    splitReason: { type: String, enum: ["duration_limit", "manual", "page_navigation"], default: null },
     meta: {
       userAgent: String,
       platform: String,
@@ -41,6 +46,8 @@ const sessionSchema = new mongoose.Schema(
       email: String,
       custom: { type: mongoose.Schema.Types.Mixed },
     },
+    /** Custom attributes from init (e.g. { region: 'eu' }) */
+    attributes: { type: mongoose.Schema.Types.Mixed },
     pageCount: { type: Number, default: 0 },
     /** Unique page URLs (type 4 meta hrefs) for pageCount */
     pages: [{ type: String }],
@@ -49,6 +56,8 @@ const sessionSchema = new mongoose.Schema(
   },
   { collection: "quicklook_sessions", versionKey: false }
 );
+
+sessionSchema.index({ projectKey: 1, createdAt: -1 });
 
 sessionSchema.pre("save", function () {
   if (this.isNew && this.retentionDays) {

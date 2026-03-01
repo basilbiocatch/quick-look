@@ -1,12 +1,14 @@
 let pushEvent;
 let apiBase = "";
-const BLOCKLIST = ["quicklook", "sessions/start", "sessions/", "/chunk", "/end"];
+const BLOCKLIST = ["/api/quicklook/", "quicklook", "sessions/start", "sessions/", "/chunk", "/end"];
 
 function isQuicklookUrl(url) {
   if (!url || !apiBase) return false;
   try {
     const u = typeof url === "string" ? url : url.toString();
-    return BLOCKLIST.some((p) => u.includes(p)) || u.startsWith(apiBase);
+    // Check if URL starts with apiBase OR contains any blocklist pattern
+    if (u.startsWith(apiBase)) return true;
+    return BLOCKLIST.some((p) => u.includes(p));
   } catch {
     return false;
   }
@@ -32,7 +34,10 @@ export function patchNetwork(pushEventFn, apiUrl) {
   const origFetch = window.fetch;
   window.fetch = function (input, init) {
     const url = typeof input === "string" ? input : input?.url;
-    if (isQuicklookUrl(url)) return origFetch.apply(this, arguments);
+    if (isQuicklookUrl(url)) {
+      // Don't record Quicklook's own API calls
+      return origFetch.apply(this, arguments);
+    }
     const start = Date.now();
     return origFetch.apply(this, arguments).then(
       (res) => {

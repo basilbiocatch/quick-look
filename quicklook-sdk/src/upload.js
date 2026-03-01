@@ -1,10 +1,10 @@
-import { getSessionId, getApiUrl } from "./session.js";
+import { getSessionId, getApiUrl, shouldRotateSession, rotateSession } from "./session.js";
 import pako from "pako";
 
 const FLUSH_INTERVAL_MS = 5000;
 const COMPRESS_THRESHOLD_BYTES = 50 * 1024;
 const FLUSH_SIZE_BYTES = 150 * 1024;
-const FIRST_CHUNK_DELAY_MS = 2000;
+const FIRST_CHUNK_DELAY_MS = 500;
 const STORAGE_CHUNK_KEY = "quicklook_chunk_index";
 let eventBuffer = [];
 let chunkIndex = 0;
@@ -44,17 +44,40 @@ function scheduleFirstChunkFlush() {
     if (getSessionId()) {
       doFlush();
     } else {
-      console.warn('[quicklook] first chunk delayed: waiting for sessionId');
-      setTimeout(() => {
-        if (getSessionId()) doFlush();
-      }, 1000);
+      let retries = 0;
+      const maxRetries = 5;
+      const retry = () => {
+        retries++;
+        if (getSessionId()) {
+          doFlush();
+        } else if (retries < maxRetries) {
+          setTimeout(retry, 1000 * retries);
+        }
+      };
+      setTimeout(retry, 1000);
     }
   }, FIRST_CHUNK_DELAY_MS);
 }
 
-function doFlush() {
+async function doFlush() {
   flushTimer = null;
-  if (eventBuffer.length === 0) return;
+  if (eventBuffer.length === 0) {
+    return;
+  }
+
+  // Check if session should rotate before flushing
+  if (shouldRotateSession()) {
+    try {
+      const result = await rotateSession("duration_limit");
+      if (result) {
+        chunkIndex = 0;
+        persistChunkIndex();
+      }
+    } catch (e) {
+      // Session rotation failed
+    }
+  }
+  
   ensureRestoredChunkIndex();
   const events = eventBuffer.slice();
   eventBuffer = [];
@@ -82,7 +105,6 @@ function sendChunkDirect(index, events) {
     const sessionId = getSessionId();
     const apiUrl = getApiUrl();
     if (!sessionId || !apiUrl) {
-      console.warn("[quicklook] chunk", index, "dropped: no sessionId yet");
       return;
     }
     const json = JSON.stringify(events);
@@ -105,7 +127,7 @@ function sendChunkDirect(index, events) {
       keepalive: true,
     }).catch(() => {});
   } catch (e) {
-    console.warn("[quicklook] sendChunkDirect error", e);
+    // sendChunkDirect error
   }
 }
 
@@ -115,7 +137,6 @@ function sendWorkerChunk(index, data) {
   const sessionId = getSessionId();
   const apiUrl = getApiUrl();
   if (!sessionId || !apiUrl) {
-    console.warn('[quicklook] worker chunk', index, 'queued: no sessionId yet');
     pendingWorkerChunks.push({ index, data });
     return;
   }
@@ -175,7 +196,26 @@ export function pushEvent(ev) {
   }
 }
 
+export function flush() {
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  if (firstChunkTimer) {
+    clearTimeout(firstChunkTimer);
+    firstChunkTimer = null;
+  }
+  if (eventBuffer.length > 0) {
+    doFlush();
+  }
+}
+
+let flushedOnUnload = false;
+
 export function flushAndEnd() {
+  if (flushedOnUnload) return;
+  flushedOnUnload = true;
+
   if (flushTimer) {
     clearTimeout(flushTimer);
     flushTimer = null;
@@ -193,12 +233,19 @@ export function flushAndEnd() {
     const sessionId = getSessionId();
     const apiUrl = getApiUrl();
     if (sessionId && apiUrl) {
-      const body = JSON.stringify({ index, data: events, compressed: false, status: "close" });
-      navigator.sendBeacon(`${apiUrl}/api/quicklook/sessions/${sessionId}/end`, body);
+      const body = JSON.stringify({ index, data: events, compressed: false });
+      navigator.sendBeacon(`${apiUrl}/api/quicklook/sessions/${sessionId}/chunk`, body);
     }
   }
 }
 
 export function startScheduler() {
   scheduleFlush();
+}
+
+export function stopScheduler() {
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
 }

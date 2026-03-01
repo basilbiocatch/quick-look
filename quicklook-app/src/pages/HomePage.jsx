@@ -62,7 +62,7 @@ export default function HomePage() {
         }}
       >
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
-          <img src="/logo.png" alt="" style={{ height: 32, width: 32, display: "block" }} />
+          {/* <img src="/logo.png" alt="" style={{ height: 32, width: 32, display: "block" }} /> */}
           <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.25rem" }}>
             Quicklook
           </Typography>
