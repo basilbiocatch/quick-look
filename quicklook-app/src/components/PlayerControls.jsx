@@ -17,6 +17,38 @@ import { formatTimecode } from "../utils/sessionParser";
 
 const SPEED_OPTIONS = [0.5, 1, 1.5, 2, 4, 8];
 
+const MARK_COLORS = {
+  url: "#2196f3",
+  click: "#4caf50",
+  input: "#ff9800",
+  custom: "#9c27b0",
+};
+
+function TimelineMark(props) {
+  const { typeByIndex, ...rest } = props;
+  const index = rest["data-index"];
+  const type = typeByIndex?.[index] || "custom";
+  const color = MARK_COLORS[type] ?? MARK_COLORS.custom;
+  return (
+    <span
+      {...rest}
+      data-mark-type={type}
+      style={{
+        ...rest.style,
+        width: 10,
+        height: 10,
+        borderRadius: "50%",
+        backgroundColor: color,
+        border: "1px solid rgba(255,255,255,0.7)",
+        boxShadow: "0 0 0 1px rgba(0,0,0,0.12)",
+        marginLeft: -5,
+        transform: "translate(-50%, -50%)",
+        opacity: rest.markActive ? 1 : 0.9,
+      }}
+    />
+  );
+}
+
 export default function PlayerControls({
   duration,
   currentTime,
@@ -25,6 +57,7 @@ export default function PlayerControls({
   onPlayingChange,
   playerRef,
   eventMarks = [],
+  eventMarksWithTypes = [],
   skipInactive = true,
   onSkipInactiveChange,
   onTogglePlay,
@@ -89,9 +122,13 @@ export default function PlayerControls({
     onSkipInactiveChange?.(checked);
   };
 
-  const marks = eventMarks.length > 0
-    ? eventMarks.slice(0, 100).map((ms) => ({ value: ms }))
-    : [];
+  const useTypedMarks = eventMarksWithTypes.length > 0;
+  const marks = useTypedMarks
+    ? eventMarksWithTypes.slice(0, 100).map((m) => ({ value: m.timeMs }))
+    : eventMarks.length > 0
+      ? eventMarks.slice(0, 100).map((ms) => ({ value: ms }))
+      : [];
+  const markTypeByIndex = useTypedMarks ? eventMarksWithTypes.slice(0, 100).map((m) => m.type) : [];
 
   return (
     <Box
@@ -159,7 +196,16 @@ export default function PlayerControls({
             marks={marks}
             valueLabelDisplay="auto"
             valueLabelFormat={(v) => formatTimecode(v)}
-            sx={{ py: 0.5 }}
+            slots={{ mark: useTypedMarks ? TimelineMark : undefined }}
+            slotProps={{
+              mark: useTypedMarks ? { typeByIndex: markTypeByIndex } : undefined,
+            }}
+            sx={{
+              py: 0.5,
+              "& .MuiSlider-mark": useTypedMarks
+                ? undefined
+                : { width: 6, height: 6, borderRadius: "50%", marginLeft: -3 },
+            }}
           />
         </Box>
       </Box>

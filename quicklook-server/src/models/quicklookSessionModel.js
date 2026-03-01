@@ -53,6 +53,8 @@ const sessionSchema = new mongoose.Schema(
     pages: [{ type: String }],
     duration: { type: Number },
     chunkCount: { type: Number, default: 0 },
+    /** Where chunks are stored: 'mongodb' or 'gcs' */
+    storageType: { type: String, enum: ["mongodb", "gcs"], default: "mongodb" },
   },
   { collection: "quicklook_sessions", versionKey: false }
 );

@@ -14,7 +14,7 @@ import User from "../src/models/userModel.js";
 
 const SALT_ROUNDS = 10;
 const EMAIL = "basil@nobexinc.com";
-const NEW_PASSWORD = "Basil123!";
+const NEW_PASSWORD = "";
 
 async function main() {
   if (!process.env.QUICKLOOK_DB) {

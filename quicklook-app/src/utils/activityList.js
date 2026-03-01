@@ -91,6 +91,25 @@ export function getEventMarksFromEvents(events, maxMarks = 150) {
   return Array.from({ length: maxMarks }, (_, i) => sorted[Math.round(i * step)]);
 }
 
+/** Event type for timeline mark styling */
+export const EVENT_MARK_TYPES = { URL: "url", CLICK: "click", INPUT: "input", CUSTOM: "custom" };
+
+/** Get timeline marks with type for styling (bigger, colored per type). Returns { timeMs, type }[], limited to maxMarks. */
+export function getEventMarksWithTypes(events, maxMarks = 150) {
+  if (!Array.isArray(events)) return [];
+  const activities = buildActivityList(events);
+  const byTime = new Map();
+  for (const a of activities) {
+    if (!byTime.has(a.timeMs)) byTime.set(a.timeMs, a.type);
+  }
+  const sorted = Array.from(byTime.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([timeMs, type]) => ({ timeMs, type }));
+  if (sorted.length <= maxMarks) return sorted;
+  const step = (sorted.length - 1) / (maxMarks - 1);
+  return Array.from({ length: maxMarks }, (_, i) => sorted[Math.round(i * step)]);
+}
+
 /** Normalize URL to page only (origin + pathname), no search or hash. Used for exclusion matching. */
 export function urlPageKey(url) {
   if (!url || typeof url !== "string") return url || "";

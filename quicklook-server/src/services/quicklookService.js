@@ -3,10 +3,60 @@
 import { v4 as uuidv4 } from "uuid";
 import zlib from "zlib";
 import QuicklookSession from "../models/quicklookSessionModel.js";
-import QuicklookChunk from "../models/quicklookChunkModel.js";
 import QuicklookProject from "../models/quicklookProjectModel.js";
 import User from "../models/userModel.js";
 import logger from "../configs/loggingConfig.js";
+import { ChunkStorage } from "../storage/chunkStorage.js";
+import { GcsAdapter } from "../storage/gcsAdapter.js";
+
+let CHUNK_STORAGE_BACKEND = process.env.CHUNK_STORAGE || "mongodb";
+const rawBucket = (process.env.GCS_BUCKET || "").trim();
+const isPlaceholderBucket = !rawBucket || /^(GCP|gcp)$/i.test(rawBucket) || rawBucket.length < 5;
+if (CHUNK_STORAGE_BACKEND === "gcs" && (!rawBucket || isPlaceholderBucket)) {
+  logger.warn(
+    "CHUNK_STORAGE=gcs but GCS_BUCKET is missing or looks like a placeholder. Create a bucket in Google Cloud Console (e.g. quicklook-chunks) and set GCS_BUCKET to its name. Falling back to MongoDB."
+  );
+  CHUNK_STORAGE_BACKEND = "mongodb";
+}
+const gcsBucket = rawBucket && !isPlaceholderBucket ? rawBucket.toLowerCase() : undefined;
+const chunkStorage = new ChunkStorage(CHUNK_STORAGE_BACKEND, {
+  bucket: gcsBucket,
+  projectId: process.env.GCP_PROJECT_ID,
+  keyFilename: process.env.GCS_KEY_FILE,
+});
+/** Used when fetching events for sessions that have chunks in MongoDB (storageType 'mongodb'). */
+const mongoChunkStorage = new ChunkStorage("mongodb", {});
+
+if (CHUNK_STORAGE_BACKEND === "gcs") {
+  logger.info("Chunk storage: using GCP Cloud Storage (GCS)", {
+    bucket: gcsBucket,
+    projectId: process.env.GCP_PROJECT_ID || "(default)",
+  });
+} else {
+  logger.info("Chunk storage: using MongoDB (set CHUNK_STORAGE=gcs and GCS_BUCKET to use GCP)");
+}
+
+/** Run once at startup when using GCS: ensure bucket exists, try to create if missing. */
+export async function checkGcsBucketAtStartup() {
+  if (CHUNK_STORAGE_BACKEND !== "gcs" || !gcsBucket) return;
+  try {
+    const adapter = new GcsAdapter({
+      bucket: gcsBucket,
+      projectId: process.env.GCP_PROJECT_ID,
+      keyFilename: process.env.GCS_KEY_FILE,
+    });
+    const location = process.env.GCS_BUCKET_LOCATION || "us-central1";
+    const ok = await adapter.createBucketIfNotExists(location);
+    if (!ok) {
+      const project = process.env.GCP_PROJECT_ID || "YOUR_PROJECT_ID";
+      logger.error(
+        `GCS bucket "${gcsBucket}" does not exist and auto-create failed. Create it manually: gcloud storage buckets create gs://${gcsBucket} --project=${project} --location=${location}`
+      );
+    }
+  } catch (err) {
+    logger.warn("Could not check GCS bucket (will fail on first chunk save)", { error: err.message });
+  }
+}
 
 const SESSION_CAP_WINDOW_DAYS = 30;
 
@@ -17,6 +67,19 @@ function decompressChunkData(data, compressed) {
     const decompressed = zlib.gunzipSync(buf);
     return JSON.parse(decompressed.toString("utf8"));
   } catch (err) {
+    if (err.message && (err.message.includes("incorrect header check") || err.message.includes("unknown format"))) {
+      try {
+        const buf = Buffer.from(data, "base64");
+        const str = buf.toString("utf8");
+        return JSON.parse(str);
+      } catch (e2) {
+        if (typeof data === "string") {
+          try {
+            return JSON.parse(data);
+          } catch (_) {}
+        }
+      }
+    }
     logger.error("quicklookService: decompress failed", { error: err.message });
     throw err;
   }
@@ -61,6 +124,7 @@ export const QuicklookService = {
         regionName: geo.regionName,
       };
     }
+    const storageType = CHUNK_STORAGE_BACKEND === "gcs" ? "gcs" : "mongodb";
     const doc = new QuicklookSession({
       sessionId,
       projectKey: String(projectKey).slice(0, 256),
@@ -69,6 +133,7 @@ export const QuicklookService = {
       user: user || {},
       ipAddress: ipAddress || null,
       retentionDays: sessionRetentionDays,
+      storageType,
       ...(attributes != null && typeof attributes === "object" && !Array.isArray(attributes)
         ? { attributes }
         : {}),
@@ -82,39 +147,59 @@ export const QuicklookService = {
   },
 
   async saveChunk({ sessionId, index, data, compressed }) {
-    const events = Array.isArray(data) ? data : decompressChunkData(data, compressed);
+    let events = Array.isArray(data) ? data : decompressChunkData(data, compressed);
     if (!Array.isArray(events)) {
-      throw new Error("Chunk data must be an array of events");
+      if (events && typeof events === "object" && Array.isArray(events.events)) {
+        events = events.events;
+      } else if (events && typeof events === "object" && Array.isArray(events.data)) {
+        events = events.data;
+      }
     }
-    await QuicklookChunk.findOneAndUpdate(
-      { sessionId, index },
-      { sessionId, index, events },
-      { upsert: true }
-    );
-    const session = await QuicklookSession.findOne({ sessionId });
-    if (session) {
-      session.chunkCount = await QuicklookChunk.countDocuments({ sessionId });
-      const existing = new Set(Array.isArray(session.pages) ? session.pages : []);
+    if (!Array.isArray(events)) {
+      logger.warn("quicklook saveChunk: skipping non-array payload", {
+        sessionId: sessionId?.slice(0, 8),
+        index,
+        type: Array.isArray(data) ? "array" : typeof data,
+      });
+      return { success: true };
+    }
+    const session = await QuicklookSession.findOne({ sessionId }).select("projectKey");
+    if (!session) throw new Error("Session not found");
+    const project = await QuicklookProject.findOne({ projectKey: session.projectKey }).select("owner");
+    await chunkStorage.saveChunk(sessionId, index, events, {
+      owner: project?.owner,
+      projectKey: session.projectKey,
+    });
+    const sessionDoc = await QuicklookSession.findOne({ sessionId });
+    if (sessionDoc) {
+      sessionDoc.chunkCount = await chunkStorage.countChunks(sessionId);
+      const existing = new Set(Array.isArray(sessionDoc.pages) ? sessionDoc.pages : []);
       const hrefsFromChunk = events.filter((e) => e.type === 4 && e.data?.href).map((e) => String(e.data.href).trim()).filter(Boolean);
       for (const href of hrefsFromChunk) existing.add(href);
       if (existing.size > 0) {
-        session.pages = [...existing];
-        session.pageCount = session.pages.length;
+        sessionDoc.pages = [...existing];
+        sessionDoc.pageCount = sessionDoc.pages.length;
       }
-      if (session.pageCount === 0 && session.chunkCount > 0) {
-        const allChunks = await QuicklookChunk.find({ sessionId }).sort({ index: 1 }).lean();
+      if (sessionDoc.pageCount === 0 && sessionDoc.chunkCount > 0) {
+        const allChunks = await chunkStorage.getChunks(sessionId);
         const allEvents = allChunks.flatMap((c) => (Array.isArray(c.events) ? c.events : []));
         const allHrefs = new Set(
           allEvents.filter((e) => e.type === 4 && e.data?.href).map((e) => String(e.data.href).trim()).filter(Boolean)
         );
         if (allHrefs.size > 0) {
-          session.pages = [...allHrefs];
-          session.pageCount = session.pages.length;
+          sessionDoc.pages = [...allHrefs];
+          sessionDoc.pageCount = sessionDoc.pages.length;
         }
       }
-      await session.save();
+      await sessionDoc.save();
     }
-    logger.info("quicklook chunk saved", { sessionId: sessionId?.slice(0, 8), index, eventCount: events.length });
+    const destination = CHUNK_STORAGE_BACKEND === "gcs" ? "GCP Cloud Storage" : "MongoDB";
+    logger.info(`quicklook chunk saved → ${destination}`, {
+      sessionId: sessionId?.slice(0, 8),
+      index,
+      eventCount: events.length,
+      storage: CHUNK_STORAGE_BACKEND,
+    });
     return { success: true };
   },
 
@@ -127,9 +212,9 @@ export const QuicklookService = {
     }
     const session = await QuicklookSession.findOne({ sessionId });
     if (!session) return { success: true };
-    
+
     // Recalculate pages from all chunks before closing
-    const allChunks = await QuicklookChunk.find({ sessionId }).sort({ index: 1 }).lean();
+    const allChunks = await chunkStorage.getChunks(sessionId);
     const allEvents = allChunks.flatMap((c) => (Array.isArray(c.events) ? c.events : []));
     const allHrefs = new Set(
       allEvents.filter((e) => e.type === 4 && e.data?.href).map((e) => String(e.data.href).trim()).filter(Boolean)
@@ -207,10 +292,35 @@ export const QuicklookService = {
   },
 
   async getSessionEvents(sessionId) {
-    const chunks = await QuicklookChunk.find({ sessionId })
-      .select("index events")
-      .sort({ index: 1 })
-      .lean();
+    const session = await QuicklookSession.findOne({ sessionId }).select("storageType chunkCount").lean();
+    let chunks;
+    let fromGcs = false;
+    if (session?.storageType === "gcs" && CHUNK_STORAGE_BACKEND === "gcs") {
+      chunks = await chunkStorage.getChunks(sessionId);
+      fromGcs = chunks.length > 0;
+      // GCS returned nothing — fall back to MongoDB in case chunks were saved there
+      // (e.g. timing window between session start and first upload, or server restart
+      //  mid-session caused some chunks to land in MongoDB before GCS was active)
+      if (chunks.length === 0) {
+        const mongoChunks = await mongoChunkStorage.getChunks(sessionId);
+        if (mongoChunks.length > 0) {
+          chunks = mongoChunks;
+          fromGcs = false;
+        }
+      }
+    } else {
+      chunks = await mongoChunkStorage.getChunks(sessionId);
+      if (chunks.length === 0 && CHUNK_STORAGE_BACKEND === "gcs" && (session?.chunkCount ?? 0) > 0) {
+        chunks = await chunkStorage.getChunks(sessionId);
+        fromGcs = chunks.length > 0;
+      }
+    }
+    if (chunks.length > 0 && fromGcs) {
+      logger.info("Session events loaded from GCP Cloud Storage", {
+        sessionId: sessionId?.slice(0, 8),
+        chunkCount: chunks.length,
+      });
+    }
     const events = [];
     const pagesSet = new Set();
     const networkEvents = [];
@@ -245,7 +355,7 @@ export const QuicklookService = {
     const expired = await QuicklookSession.find({ expiresAt: { $lt: now } }).select("sessionId").lean();
     let deleted = 0;
     for (const s of expired) {
-      await QuicklookChunk.deleteMany({ sessionId: s.sessionId });
+      await chunkStorage.deleteChunks(s.sessionId);
       await QuicklookSession.deleteOne({ sessionId: s.sessionId });
       deleted++;
     }
@@ -255,18 +365,22 @@ export const QuicklookService = {
   async deleteProject(projectKey) {
     const sessions = await QuicklookSession.find({ projectKey }).select("sessionId").lean();
     const sessionIds = sessions.map((s) => s.sessionId);
-    const chunksDeleted = await QuicklookChunk.deleteMany({ sessionId: { $in: sessionIds } });
+    let chunksDeleted = 0;
+    for (const sessionId of sessionIds) {
+      await chunkStorage.deleteChunks(sessionId);
+      chunksDeleted++;
+    }
     const sessionsDeleted = await QuicklookSession.deleteMany({ projectKey });
     const projectDeleted = await QuicklookProject.deleteOne({ projectKey });
     logger.info("quicklook project deleted", {
       projectKey,
       sessionsDeleted: sessionsDeleted.deletedCount,
-      chunksDeleted: chunksDeleted.deletedCount,
+      chunksDeleted,
       projectDeleted: projectDeleted.deletedCount,
     });
     return {
       sessions: sessionsDeleted.deletedCount,
-      chunks: chunksDeleted.deletedCount,
+      chunks: chunksDeleted,
       project: projectDeleted.deletedCount,
     };
   },
@@ -287,14 +401,12 @@ export const QuicklookService = {
     
     for (const session of activeSessions) {
       // Get the most recent chunk for this session
-      const latestChunk = await QuicklookChunk.findOne({ sessionId: session.sessionId })
-        .sort({ createdAt: -1 })
-        .lean();
+      const latestChunk = await chunkStorage.getLatestChunk(session.sessionId);
       
       // Determine last activity time:
       // 1. Use latest chunk's createdAt if chunks exist
       // 2. Fall back to session's createdAt if no chunks exist
-      const lastActivityTime = latestChunk?.createdAt || session.createdAt;
+      const lastActivityTime = latestChunk?.createdAt ?? session.createdAt;
       const lastActivity = lastActivityTime instanceof Date ? lastActivityTime : new Date(lastActivityTime);
       
       if (lastActivity < cutoffTime) {
@@ -310,7 +422,7 @@ export const QuicklookService = {
           sessionDoc.duration = closedAt.getTime() - createdAt.getTime();
           
           // Recalculate pages from all chunks
-          const allChunks = await QuicklookChunk.find({ sessionId: session.sessionId }).sort({ index: 1 }).lean();
+          const allChunks = await chunkStorage.getChunks(session.sessionId);
           const allEvents = allChunks.flatMap((c) => (Array.isArray(c.events) ? c.events : []));
           const allHrefs = new Set(
             allEvents.filter((e) => e.type === 4 && e.data?.href).map((e) => String(e.data.href).trim()).filter(Boolean)

@@ -26,7 +26,7 @@ import SkipNextIcon from "@mui/icons-material/SkipNext";
 import CloseIcon from "@mui/icons-material/Close";
 import { useParams, useNavigate } from "react-router-dom";
 import { getSession, getEvents, getSessions, getProject, updateProject } from "../api/quicklookApi";
-import { getEventsDurationMs, getPagesFromEvents, getEventMarksFromEvents, urlPageKey } from "../utils/activityList";
+import { getEventsDurationMs, getPagesFromEvents, getEventMarksFromEvents, getEventMarksWithTypes, urlPageKey } from "../utils/activityList";
 import RightPanel from "../components/RightPanel";
 import PlayerControls from "../components/PlayerControls";
 import DevToolsPanel, { getConsoleEvents } from "../components/DevToolsPanel";
@@ -130,6 +130,7 @@ export default function ReplayPage() {
     [pages, excludedSet]
   );
   const eventMarks = React.useMemo(() => getEventMarksFromEvents(events), [events]);
+  const eventMarksWithTypes = React.useMemo(() => getEventMarksWithTypes(events), [events]);
   const currentPageIndex = React.useMemo(() => {
     if (visiblePages.length === 0) return 0;
     let idx = 0;
@@ -383,6 +384,9 @@ export default function ReplayPage() {
           try {
             if (playerInstance.goto) playerInstance.goto(0, false);
             if (playerInstance.triggerResize) playerInstance.triggerResize();
+            // Auto-play when entering a session
+            setPlaying(true);
+            if (playerInstance.play) playerInstance.play();
           } catch (_) {}
         });
       })
@@ -695,6 +699,7 @@ export default function ReplayPage() {
             onPlayingChange={setPlaying}
             playerRef={playerRef}
             eventMarks={eventMarks}
+            eventMarksWithTypes={eventMarksWithTypes}
             skipInactive={skipInactive}
             onSkipInactiveChange={setSkipInactive}
             onTogglePlay={handleTogglePlay}

@@ -9,6 +9,8 @@ import fs from "fs";
 import quicklookRoutes from "./routes/quicklookRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import { startQuicklookRetentionJob, startAutoCloseInactiveSessionsJob } from "./jobs/quicklookRetention.js";
+import { startStorageCostJob } from "./jobs/storageCostJob.js";
+import { checkGcsBucketAtStartup } from "./services/quicklookService.js";
 import logger from "./configs/loggingConfig.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -45,4 +47,6 @@ app.listen(PORT, () => {
   logger.info(`Quicklook server listening on port ${PORT}`);
   startQuicklookRetentionJob();
   startAutoCloseInactiveSessionsJob();
+  startStorageCostJob();
+  checkGcsBucketAtStartup().catch(() => {});
 });
