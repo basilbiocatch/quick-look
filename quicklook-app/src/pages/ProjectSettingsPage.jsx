@@ -15,6 +15,8 @@ import {
   Alert,
   Tabs,
   Tab,
+  ToggleButtonGroup,
+  ToggleButton,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -52,6 +54,7 @@ export default function ProjectSettingsPage() {
   const [excludedUrls, setExcludedUrls] = useState([]);
   const [newPattern, setNewPattern] = useState("");
   const [tabIndex, setTabIndex] = useState(0);
+  const [integrationMode, setIntegrationMode] = useState("developer");
   const [copied, setCopied] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -142,7 +145,7 @@ export default function ProjectSettingsPage() {
 
   const apiBase = getApiBase();
   const integrationSnippet = project
-    ? `<script src="${apiBase}/quicklook-sdk.js"></script>
+    ? `<script src="${apiBase}/quicklook-sdk.js" async></script>
 <script>
   quicklook('init', {
     apiUrl: '${apiBase}',
@@ -150,9 +153,16 @@ export default function ProjectSettingsPage() {
   });
 </script>`
     : "";
+  const integrationPrompt = project
+    ? `Add this session recording script to my site in a non-blocking way. Place it at the end of the body. Use the async attribute on the script that loads the SDK so it does not block page load. Here is the exact code to add:
+
+${integrationSnippet}`
+    : "";
+
   const copySnippet = () => {
-    if (!integrationSnippet) return;
-    navigator.clipboard.writeText(integrationSnippet).then(() => {
+    const text = integrationMode === "developer" ? integrationSnippet : integrationPrompt;
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
@@ -297,9 +307,23 @@ export default function ProjectSettingsPage() {
 
           {tabIndex === 1 && (
             <>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                 Add this script to your site to start recording sessions.
               </Typography>
+              <ToggleButtonGroup
+                value={integrationMode}
+                exclusive
+                onChange={(_, v) => v != null && setIntegrationMode(v)}
+                size="small"
+                sx={{ mb: 2 }}
+              >
+                <ToggleButton value="developer" aria-label="I'm a developer">
+                  I'm a developer
+                </ToggleButton>
+                <ToggleButton value="ai" aria-label="I use an AI web builder">
+                  I use an AI web builder
+                </ToggleButton>
+              </ToggleButtonGroup>
               <Paper
                 variant="outlined"
                 sx={{
@@ -317,15 +341,20 @@ export default function ProjectSettingsPage() {
                   size="small"
                   onClick={copySnippet}
                   sx={{ position: "absolute", top: 8, right: 8 }}
-                  aria-label="Copy snippet"
+                  aria-label={integrationMode === "developer" ? "Copy script" : "Copy prompt"}
                 >
                   <ContentCopyIcon fontSize="small" />
                 </IconButton>
-                {integrationSnippet}
+                {integrationMode === "developer" ? integrationSnippet : integrationPrompt}
               </Paper>
               {copied && (
                 <Typography variant="caption" color="success.main" sx={{ mt: 1, display: "block" }}>
                   Copied to clipboard.
+                </Typography>
+              )}
+              {integrationMode === "ai" && (
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
+                  Copy the prompt above and paste it into your AI assistant so it adds the script in a non-blocking way.
                 </Typography>
               )}
             </>

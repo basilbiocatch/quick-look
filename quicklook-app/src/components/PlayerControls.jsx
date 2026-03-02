@@ -196,7 +196,7 @@ export default function PlayerControls({
             ))}
           </Select>
         </FormControl>
-        <Tooltip title="Compresses idle periods longer than 30s. Turn OFF for true real-time playback at 1x speed.">
+        <Tooltip title="Play at real speed; idle periods longer than 30s are skipped automatically.">
           <FormControlLabel
             control={
               <Switch

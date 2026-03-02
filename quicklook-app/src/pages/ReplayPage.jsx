@@ -12,6 +12,7 @@ import {
   Button,
   Switch,
   FormControlLabel,
+  Snackbar,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
@@ -26,7 +27,7 @@ import SkipNextIcon from "@mui/icons-material/SkipNext";
 import CloseIcon from "@mui/icons-material/Close";
 import { useParams, useNavigate } from "react-router-dom";
 import { getSession, getEvents, getSessions, getProject, updateProject } from "../api/quicklookApi";
-import { getEventsDurationMs, getPagesFromEvents, getEventMarksFromEvents, getEventMarksWithTypes, urlPageKey, compressLongGaps } from "../utils/activityList";
+import { getEventsDurationMs, getPagesFromEvents, getEventMarksFromEvents, getEventMarksWithTypes, urlPageKey } from "../utils/activityList";
 import RightPanel from "../components/RightPanel";
 import PlayerControls from "../components/PlayerControls";
 import DevToolsPanel, { getConsoleEvents } from "../components/DevToolsPanel";
@@ -54,8 +55,10 @@ export default function ReplayPage() {
   const [countdown, setCountdown] = useState(5);
   const [autoPlay, setAutoPlay] = useState(false);
   const [excludedUrls, setExcludedUrls] = useState([]);
+  const [skippedInactivityMsg, setSkippedInactivityMsg] = useState(null);
   const countdownRef = useRef(null);
   const countdownIntervalRef = useRef(null);
+  const skipMessageTimeoutRef = useRef(null);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -120,11 +123,8 @@ export default function ReplayPage() {
   };
 
   const hasFullSnapshot = events.some((e) => Number(e.type) === 2);
-  // When "Skip inactivity" is on: compress only gaps > 30s to 2s so short activity bursts play at real 1x
-  const playerEvents = React.useMemo(
-    () => (skipInactive ? compressLongGaps(events, 30 * 1000, 2 * 1000) : events),
-    [events, skipInactive]
-  );
+  // Always use original events so 1x = real-time. When "Skip inactivity" is on, we jump over long gaps in the tick instead of compressing the timeline.
+  const playerEvents = events;
   const durationMs = playerEvents.length >= 2
     ? getEventsDurationMs(playerEvents)
     : (session?.duration ?? (session?.closedAt && session?.createdAt ? new Date(session.closedAt) - new Date(session.createdAt) : 0));
@@ -223,8 +223,8 @@ export default function ReplayPage() {
     } catch (_) {}
   };
 
-  // Sync current time from replayer while playing; fallback to elapsed-time when replayer not ready; skipInactive jumps over long gaps
-  const INACTIVITY_THRESHOLD_MS = 1500;
+  // Sync current time from replayer while playing; when skipInactive is on, jump over long gaps (>30s) so activity plays at real 1x
+  const INACTIVITY_THRESHOLD_MS = 30 * 1000;
   const tickStartRef = useRef(null);
   const startPositionRef = useRef(0);
   const lastTimeRef = useRef(0);
@@ -267,16 +267,30 @@ export default function ReplayPage() {
           setShowEndOverlay(false);
         }
 
+        // When "Skip inactivity" is on: jump over long gaps so the user sees real-time during activity
         if (t != null && skipInactive && eventMarks.length > 0 && wrapper?.goto) {
           const nextMark = eventMarks.find((m) => m > t + 80);
           if (nextMark != null && nextMark - t > INACTIVITY_THRESHOLD_MS) {
+            const skippedSeconds = Math.round((nextMark - t) / 1000);
             wrapper.goto(nextMark, true);
+            setSkippedInactivityMsg(`Skipped ${skippedSeconds}s of inactivity`);
+            if (skipMessageTimeoutRef.current) clearTimeout(skipMessageTimeoutRef.current);
+            skipMessageTimeoutRef.current = setTimeout(() => {
+              setSkippedInactivityMsg(null);
+              skipMessageTimeoutRef.current = null;
+            }, 2500);
           }
         }
       } catch (_) {}
     };
     const id = setInterval(tick, 100);
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+      if (skipMessageTimeoutRef.current) {
+        clearTimeout(skipMessageTimeoutRef.current);
+        skipMessageTimeoutRef.current = null;
+      }
+    };
   }, [playing, skipInactive, eventMarks, durationMs, session?.duration, showEndOverlay]);
 
   // Handle end-of-session countdown
@@ -917,6 +931,15 @@ export default function ReplayPage() {
           onSaveExclusions={handleSaveExclusions}
         />
       </Box>
+      {/* Brief message when "Skip inactivity" jumps over a long gap */}
+      <Snackbar
+        open={Boolean(skippedInactivityMsg)}
+        message={skippedInactivityMsg}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+        sx={{ bottom: { xs: 80, sm: 90 } }}
+        autoHideDuration={2500}
+        onClose={() => setSkippedInactivityMsg(null)}
+      />
     </Box>
   );
 }

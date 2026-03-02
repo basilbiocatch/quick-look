@@ -1047,8 +1047,97 @@ export default function SessionsPage() {
                   </>
                 )}
                 {!loading && filteredSessions.length === 0 && (
-                  <Box sx={{ py: 4, textAlign: "center" }}>
-                    <Typography color="text.secondary">No sessions match your filters.</Typography>
+                  <Box
+                    sx={{
+                      py: 6,
+                      px: 2,
+                      textAlign: "center",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 2,
+                      "@keyframes pulseRing": {
+                        "0%": { opacity: 0.6, transform: "scale(0.95)" },
+                        "50%": { opacity: 0.2, transform: "scale(1.15)" },
+                        "100%": { opacity: 0.6, transform: "scale(0.95)" },
+                      },
+                      "@keyframes dotWave": {
+                        "0%, 60%, 100%": { opacity: 0.35 },
+                        "30%": { opacity: 1 },
+                      },
+                    }}
+                  >
+                    {sessions.length === 0 ? (
+                      <>
+                        <Box
+                          sx={{
+                            position: "relative",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            width: 72,
+                            height: 72,
+                          }}
+                        >
+                          <Box
+                            sx={{
+                              position: "absolute",
+                              width: 72,
+                              height: 72,
+                              borderRadius: "50%",
+                              bgcolor: "primary.main",
+                              opacity: 0.12,
+                              animation: "pulseRing 2.2s ease-in-out infinite",
+                            }}
+                          />
+                          <Box
+                            sx={{
+                              position: "absolute",
+                              width: 72,
+                              height: 72,
+                              borderRadius: "50%",
+                              bgcolor: "primary.main",
+                              opacity: 0.08,
+                              animation: "pulseRing 2.2s ease-in-out infinite",
+                              animationDelay: "0.55s",
+                            }}
+                          />
+                          <VideocamIcon
+                            sx={{
+                              fontSize: 36,
+                              color: "primary.main",
+                              position: "relative",
+                              zIndex: 1,
+                              animation: "pulseRing 2.2s ease-in-out infinite",
+                            }}
+                          />
+                        </Box>
+                        <Typography variant="body1" color="text.secondary" fontWeight={500}>
+                          Waiting for sessions
+                          <Box
+                            component="span"
+                            sx={{
+                              "& > span": {
+                                animation: "dotWave 1.4s ease-in-out infinite",
+                                "&:nth-of-type(1)": { animationDelay: "0s" },
+                                "&:nth-of-type(2)": { animationDelay: "0.2s" },
+                                "&:nth-of-type(3)": { animationDelay: "0.4s" },
+                              },
+                            }}
+                          >
+                            <span>.</span>
+                            <span>.</span>
+                            <span>.</span>
+                          </Box>
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 280 }}>
+                          Add the integration script to your site. New recordings will appear here.
+                        </Typography>
+                      </>
+                    ) : (
+                      <Typography color="text.secondary">No sessions match your filters.</Typography>
+                    )}
                   </Box>
                 )}
               </Paper>

@@ -15,6 +15,8 @@ import {
   ListItem,
   ListItemText,
   ListItemSecondaryAction,
+  ToggleButtonGroup,
+  ToggleButton,
 } from "@mui/material";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
@@ -40,6 +42,7 @@ export default function NewProjectPage() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [createdProject, setCreatedProject] = useState(null);
+  const [integrationMode, setIntegrationMode] = useState("developer");
   const [copied, setCopied] = useState(false);
 
   const handleAddDomain = () => {
@@ -93,7 +96,7 @@ export default function NewProjectPage() {
 
   const apiBase = getApiBase();
   const snippet = createdProject
-    ? `<script src="${apiBase}/quicklook-sdk.js"></script>
+    ? `<script src="${apiBase}/quicklook-sdk.js" async></script>
 <script>
   quicklook('init', {
     apiUrl: '${apiBase}',
@@ -104,9 +107,16 @@ export default function NewProjectPage() {
 </script>`
     : "";
 
+  const snippetPrompt = snippet
+    ? `Add this session recording script to my site in a non-blocking way. Place it at the end of the body. Use the async attribute on the script that loads the SDK so it does not block page load. Here is the exact code to add:
+
+${snippet}`
+    : "";
+
   const copySnippet = () => {
-    if (!snippet) return;
-    navigator.clipboard.writeText(snippet).then(() => {
+    const text = integrationMode === "developer" ? snippet : snippetPrompt;
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
@@ -207,6 +217,20 @@ export default function NewProjectPage() {
             <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
               Add this script to your site to start recording sessions.
             </Typography>
+            <ToggleButtonGroup
+              value={integrationMode}
+              exclusive
+              onChange={(_, v) => v != null && setIntegrationMode(v)}
+              size="small"
+              sx={{ mb: 2 }}
+            >
+              <ToggleButton value="developer" aria-label="I'm a developer">
+                I'm a developer
+              </ToggleButton>
+              <ToggleButton value="ai" aria-label="I use an AI web builder">
+                I use an AI web builder
+              </ToggleButton>
+            </ToggleButtonGroup>
             <Paper
               variant="outlined"
               sx={{
@@ -224,15 +248,20 @@ export default function NewProjectPage() {
                 size="small"
                 onClick={copySnippet}
                 sx={{ position: "absolute", top: 8, right: 8 }}
-                aria-label="Copy"
+                aria-label={integrationMode === "developer" ? "Copy script" : "Copy prompt"}
               >
                 <ContentCopyIcon fontSize="small" />
               </IconButton>
-              {snippet}
+              {integrationMode === "developer" ? snippet : snippetPrompt}
             </Paper>
             {copied && (
               <Typography variant="caption" color="success.main" sx={{ mt: 1, display: "block" }}>
                 Copied to clipboard.
+              </Typography>
+            )}
+            {integrationMode === "ai" && (
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
+                Copy the prompt above and paste it into your AI assistant so it adds the script in a non-blocking way.
               </Typography>
             )}
             <Box sx={{ display: "flex", justifyContent: "space-between", mt: 3 }}>

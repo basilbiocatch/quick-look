@@ -168,7 +168,29 @@ export default function MainNavBar() {
         </Tooltip>
       </Box>
 
-      {/* Current Project Settings */}
+      {/* Project selector */}
+      <Box sx={{ display: "flex", justifyContent: "center", py: 0.5 }}>
+        <Tooltip title="Select project" placement="right">
+          <IconButton
+            onClick={(e) => setProjectMenuAnchor(e.currentTarget)}
+            sx={{
+              ...iconButtonSx,
+              ...(projectMenuAnchor && {
+                color: "#fff",
+                bgcolor: "rgba(255,255,255,0.18)",
+                "&:hover": { bgcolor: "rgba(255,255,255,0.22)" },
+              }),
+            }}
+          >
+            <FolderIcon sx={{ fontSize: 24 }} />
+          </IconButton>
+        </Tooltip>
+      </Box>
+
+      {/* Spacer to push settings to bottom */}
+      <Box sx={{ flex: 1, minHeight: 8 }} />
+
+      {/* Current Project Settings - at bottom */}
       <Box sx={{ display: "flex", justifyContent: "center", py: 0.5 }}>
         <Tooltip title="Project settings" placement="right">
           <span>
@@ -190,25 +212,6 @@ export default function MainNavBar() {
               <SettingsIcon sx={{ fontSize: 24 }} />
             </IconButton>
           </span>
-        </Tooltip>
-      </Box>
-
-      {/* Project selector */}
-      <Box sx={{ display: "flex", justifyContent: "center", py: 0.5 }}>
-        <Tooltip title="Select project" placement="right">
-          <IconButton
-            onClick={(e) => setProjectMenuAnchor(e.currentTarget)}
-            sx={{
-              ...iconButtonSx,
-              ...(projectKey && {
-                color: "#fff",
-                bgcolor: "rgba(190,149,250,0.25)",
-                "&:hover": { bgcolor: "rgba(190,149,250,0.35)" },
-              }),
-            }}
-          >
-            <FolderIcon sx={{ fontSize: 24 }} />
-          </IconButton>
         </Tooltip>
       </Box>
 

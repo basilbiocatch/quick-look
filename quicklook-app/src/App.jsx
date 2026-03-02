@@ -2,14 +2,16 @@ import { Routes, Route, Navigate, useLocation, Outlet } from "react-router-dom";
 import SessionsPage from "./pages/SessionsPage";
 import ReplayPage from "./pages/ReplayPage";
 import HomePage from "./pages/HomePage";
+import MarketingHomePage from "./pages/MarketingHomePage";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
 import NewProjectPage from "./pages/NewProjectPage";
 import ProjectSettingsPage from "./pages/ProjectSettingsPage";
 import ProtectedRoute from "./components/ProtectedRoute";
 import MainNavBar from "./components/MainNavBar";
-import { Box, Fade } from "@mui/material";
+import { Box, CircularProgress } from "@mui/material";
 import { useState, useEffect } from "react";
+import { useAuth } from "./contexts/AuthContext";
 
 function PageTransition({ children }) {
   const location = useLocation();
@@ -130,20 +132,38 @@ function AppLayout() {
   );
 }
 
+/** At "/" when unauthenticated show marketing; otherwise require auth and show app. */
+function RootLayout() {
+  const { user, loading } = useAuth();
+  const location = useLocation();
+
+  if (loading) {
+    return (
+      <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh" }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+  if (!user && location.pathname === "/") {
+    return <MarketingHomePage />;
+  }
+  if (!user) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+  return (
+    <AppLayout>
+      <Outlet />
+    </AppLayout>
+  );
+}
+
 function App() {
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <AppLayout />
-            </ProtectedRoute>
-          }
-        >
+        <Route path="/" element={<RootLayout />}>
           <Route index element={<HomePage />} />
           <Route path="projects/new" element={<NewProjectPage />} />
           <Route

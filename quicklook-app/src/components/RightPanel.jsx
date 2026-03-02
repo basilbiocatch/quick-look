@@ -12,6 +12,8 @@ import {
   ListItemText,
   Button,
   Tooltip,
+  ToggleButtonGroup,
+  ToggleButton,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -138,6 +140,7 @@ export default function RightPanel({ session, events, meta, onSeek, currentTimeM
   const navigate = useNavigate();
   const [activitySearch, setActivitySearch] = useState("");
   const [setupDialogOpen, setSetupDialogOpen] = useState(false);
+  const [setupIntegrationMode, setSetupIntegrationMode] = useState("developer");
   const [allPropertiesDialogOpen, setAllPropertiesDialogOpen] = useState(false);
   const [setupCopied, setSetupCopied] = useState(false);
 
@@ -167,7 +170,7 @@ export default function RightPanel({ session, events, meta, onSeek, currentTimeM
 
   const apiBase = getApiBase();
   const setupSnippet = session.projectKey && apiBase
-    ? `<script src="${apiBase}/quicklook-sdk.js"></script>
+    ? `<script src="${apiBase}/quicklook-sdk.js" async></script>
 <script>
   quicklook('init', {
     apiUrl: '${apiBase}',
@@ -178,9 +181,16 @@ export default function RightPanel({ session, events, meta, onSeek, currentTimeM
 </script>`
     : "";
 
+  const setupPrompt = setupSnippet
+    ? `Add this session recording script to my site in a non-blocking way. Place it at the end of the body. Use the async attribute on the script that loads the SDK so it does not block page load. Here is the exact code to add:
+
+${setupSnippet}`
+    : "";
+
   const copySetupSnippet = () => {
-    if (!setupSnippet) return;
-    navigator.clipboard.writeText(setupSnippet).then(() => {
+    const text = setupIntegrationMode === "developer" ? setupSnippet : setupPrompt;
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
       setSetupCopied(true);
       setTimeout(() => setSetupCopied(false), 2000);
     });
@@ -485,25 +495,46 @@ export default function RightPanel({ session, events, meta, onSeek, currentTimeM
       <Dialog open={setupDialogOpen} onClose={() => setSetupDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>How to set up</DialogTitle>
         <DialogContent>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
             Add this script to your site to start recording sessions for this project.
           </Typography>
           {setupSnippet ? (
-            <Box
-              component="pre"
-              sx={{
-                p: 1.5,
-                bgcolor: "action.hover",
-                borderRadius: 1,
-                overflow: "auto",
-                fontSize: "0.75rem",
-                fontFamily: "monospace",
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-all",
-              }}
-            >
-              {setupSnippet}
-            </Box>
+            <>
+              <ToggleButtonGroup
+                value={setupIntegrationMode}
+                exclusive
+                onChange={(_, v) => v != null && setSetupIntegrationMode(v)}
+                size="small"
+                sx={{ mb: 1.5 }}
+              >
+                <ToggleButton value="developer" aria-label="I'm a developer">
+                  I'm a developer
+                </ToggleButton>
+                <ToggleButton value="ai" aria-label="I use an AI web builder">
+                  I use an AI web builder
+                </ToggleButton>
+              </ToggleButtonGroup>
+              <Box
+                component="pre"
+                sx={{
+                  p: 1.5,
+                  bgcolor: "action.hover",
+                  borderRadius: 1,
+                  overflow: "auto",
+                  fontSize: "0.75rem",
+                  fontFamily: "monospace",
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-all",
+                }}
+              >
+                {setupIntegrationMode === "developer" ? setupSnippet : setupPrompt}
+              </Box>
+              {setupIntegrationMode === "ai" && (
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
+                  Copy the prompt above and paste it into your AI assistant so it adds the script in a non-blocking way.
+                </Typography>
+              )}
+            </>
           ) : (
             <Typography variant="body2" color="text.secondary">
               No project key. Open project settings to get the integration script.
@@ -514,7 +545,7 @@ export default function RightPanel({ session, events, meta, onSeek, currentTimeM
           <Button onClick={() => setSetupDialogOpen(false)}>Close</Button>
           {setupSnippet && (
             <Button startIcon={<ContentCopyIcon />} onClick={copySetupSnippet} variant="contained">
-              {setupCopied ? "Copied!" : "Copy script"}
+              {setupCopied ? "Copied!" : setupIntegrationMode === "developer" ? "Copy script" : "Copy prompt"}
             </Button>
           )}
         </DialogActions>
