@@ -80,7 +80,19 @@ gcloud secrets add-iam-policy-binding quicklook-db-uri \
 
 After this, every `gcloud builds submit --config=cloudbuild.yaml` will deploy with **GCP_PROJECT_ID** and **QUICKLOOK_DB** set.
 
-### 3b. Optional: use a plain env var instead of Secret Manager
+### 3b. Create the Gemini API key secret (Phase 2+, one-time)
+
+The deploy expects **GEMINI_API_KEY** from Secret Manager (secret name: `gemini-api-key`). Use the script (paste your key when prompted or set `GEMINI_API_KEY`):
+
+```bash
+cd quicklook-analytics
+export GCP_PROJECT_ID=quick-look-488819   # optional if already set
+./scripts/setup-gemini-secret.sh
+```
+
+Or copy-paste the block from `scripts/setup-gemini-secret.sh` and replace the key. Then deploy as usual.
+
+### 3c. Optional: use a plain env var instead of Secret Manager (DB only)
 
 If you don’t want to use Secret Manager, remove the `--set-secrets` line from `cloudbuild.yaml` and set the DB URL once after the first deploy:
 

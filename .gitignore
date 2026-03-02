@@ -6,3 +6,7 @@ node_modules/
 
 # GCP service account key (never commit)
 quicklook-server/quick-look-*-*.json
+
+# Python
+__pycache__/
+*.pyc

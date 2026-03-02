@@ -2,10 +2,8 @@
 # Run from quicklook-analytics/: gcloud builds submit --config=cloudbuild.yaml
 #
 # Env vars in the release:
-#   - GCP_PROJECT_ID is set from the build project.
-#   - QUICKLOOK_DB is set from Secret Manager (secret name: quicklook-db-uri). Create it once (see RELEASE.md).
-#   To use a plain env var instead of a secret, remove the --set-secrets line below and set QUICKLOOK_DB
-#   manually with: gcloud run services update quicklook-analytics --set-env-vars="QUICKLOOK_DB=..." ...
+#   - GCP_PROJECT_ID, GEMINI_MODEL, GCS_BUCKET from --set-env-vars.
+#   - QUICKLOOK_DB and GEMINI_API_KEY from Secret Manager. Create secrets once (see RELEASE.md and scripts/setup-gemini-secret.sh).
 #
 # _IMAGE_TAG defaults to "latest" for manual submit. For git tag: --substitutions=_IMAGE_TAG=$(git rev-parse --short HEAD)
 substitutions:
@@ -34,8 +32,8 @@ steps:
       - "--platform"
       - "managed"
       - "--allow-unauthenticated"
-      - "--set-env-vars=GCP_PROJECT_ID=${PROJECT_ID}"
-      - "--set-secrets=QUICKLOOK_DB=quicklook-db-uri:latest"
+      - "--set-env-vars=GCP_PROJECT_ID=${PROJECT_ID},GEMINI_MODEL=gemini-2.0-flash,GCS_BUCKET=quicklook-chunks"
+      - "--set-secrets=QUICKLOOK_DB=quicklook-db-uri:latest,GEMINI_API_KEY=gemini-api-key:latest"
       - "--project"
       - "${PROJECT_ID}"
 images:
