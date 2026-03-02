@@ -12,7 +12,7 @@ import {
 import VideocamIcon from "@mui/icons-material/Videocam";
 import BugReportIcon from "@mui/icons-material/BugReport";
 import CheckIcon from "@mui/icons-material/Check";
-import { getPublicAssetUrl } from "../utils/baseUrl";
+import { getPublicAssetUrl, getBasePath } from "../utils/baseUrl";
 
 const sectionSx = {
   py: { xs: 6, md: 10 },
@@ -21,6 +21,10 @@ const sectionSx = {
 const primaryGradient = "linear-gradient(135deg, #be95fa 0%, #9370db 50%, #6366f1 100%)";
 
 export default function MarketingHomePage() {
+  const base = getBasePath();
+  const loginHref = base === "/" ? "/login" : `${base}/login`;
+  const signupHref = base === "/" ? "/signup" : `${base}/signup`;
+
   return (
     <Box
       component="main"
@@ -31,16 +35,17 @@ export default function MarketingHomePage() {
         flexDirection: "column",
       }}
     >
-      {/* Header / Nav */}
+      {/* Header / Nav - high z-index and pointer-events so nothing covers the buttons */}
       <Box
         component="header"
         sx={{
           position: "sticky",
           top: 0,
-          zIndex: 10,
+          zIndex: 1300,
+          pointerEvents: "auto",
           borderBottom: "1px solid",
           borderColor: "divider",
-          bgcolor: "rgba(13,13,13,0.85)",
+          bgcolor: "rgba(13,13,13,0.95)",
           backdropFilter: "blur(12px)",
           animation: "headerSlideIn 0.5s ease-out",
           "@keyframes headerSlideIn": {
@@ -57,19 +62,21 @@ export default function MarketingHomePage() {
             background: primaryGradient,
             opacity: 0,
             transition: "opacity 0.3s ease",
+            pointerEvents: "none",
           },
           "&:hover::after": {
             opacity: 0.6,
           },
         }}
       >
-        <Container maxWidth="lg">
+        <Container maxWidth="lg" sx={{ pointerEvents: "auto" }}>
           <Box
             sx={{
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
               py: 2,
+              pointerEvents: "auto",
             }}
           >
             <Link to="/" style={{ textDecoration: "none", color: "inherit", display: "flex", alignItems: "center", gap: 10 }}>
@@ -78,10 +85,10 @@ export default function MarketingHomePage() {
                 Quicklook
               </Typography>
             </Link>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, pointerEvents: "auto" }}>
               <Button
-                component={Link}
-                to="/login"
+                component="a"
+                href={loginHref}
                 color="inherit"
                 sx={{
                   color: "text.secondary",
@@ -92,8 +99,8 @@ export default function MarketingHomePage() {
                 Log in
               </Button>
               <Button
-                component={Link}
-                to="/signup"
+                component="a"
+                href={signupHref}
                 variant="contained"
                 sx={{
                   background: primaryGradient,

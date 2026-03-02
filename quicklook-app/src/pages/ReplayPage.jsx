@@ -39,6 +39,7 @@ export default function ReplayPage() {
   const navigate = useNavigate();
   const playerRef = useRef(null);
   const containerRef = useRef(null);
+  const scrollContainerRef = useRef(null);
   const [session, setSession] = useState(null);
   const [events, setEvents] = useState([]);
   const [meta, setMeta] = useState(null);
@@ -455,6 +456,70 @@ export default function ReplayPage() {
     };
   }, [playerEvents, session]);
 
+  // Prevent scroll jumping when user manually scrolls to bottom
+  useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer) return;
+
+    let isUserScrolling = false;
+    let scrollTimeout = null;
+    let lastScrollHeight = scrollContainer.scrollHeight;
+    let wasAtBottom = false;
+
+    const handleScroll = () => {
+      isUserScrolling = true;
+      const scrollTop = scrollContainer.scrollTop;
+      const scrollHeight = scrollContainer.scrollHeight;
+      const clientHeight = scrollContainer.clientHeight;
+      
+      // Check if user is at or near bottom (within 5px threshold)
+      wasAtBottom = scrollTop + clientHeight >= scrollHeight - 5;
+      lastScrollHeight = scrollHeight;
+      
+      // Clear any pending timeout
+      if (scrollTimeout) {
+        clearTimeout(scrollTimeout);
+      }
+      
+      // Reset user scrolling flag after scroll ends
+      scrollTimeout = setTimeout(() => {
+        isUserScrolling = false;
+      }, 200);
+    };
+
+    const handleResize = () => {
+      // If user was at bottom and content height changed, maintain bottom position
+      if (wasAtBottom && scrollContainer.scrollHeight !== lastScrollHeight) {
+        requestAnimationFrame(() => {
+          scrollContainer.scrollTop = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+        });
+      }
+      lastScrollHeight = scrollContainer.scrollHeight;
+    };
+
+    scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+    
+    // Use ResizeObserver to detect content size changes (more efficient than MutationObserver)
+    const resizeObserver = new ResizeObserver(() => {
+      if (wasAtBottom && isUserScrolling) {
+        requestAnimationFrame(() => {
+          scrollContainer.scrollTop = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+        });
+      }
+      lastScrollHeight = scrollContainer.scrollHeight;
+    });
+    
+    resizeObserver.observe(scrollContainer);
+
+    return () => {
+      scrollContainer.removeEventListener('scroll', handleScroll);
+      resizeObserver.disconnect();
+      if (scrollTimeout) {
+        clearTimeout(scrollTimeout);
+      }
+    };
+  }, []);
+
   if (loading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
@@ -694,6 +759,7 @@ export default function ReplayPage() {
           }}
         >
           <Box
+            ref={scrollContainerRef}
             sx={{
               width: "100%",
               height: "100%",
@@ -703,6 +769,8 @@ export default function ReplayPage() {
               alignItems: "flex-start",
               justifyContent: "center",
               position: "relative",
+              overscrollBehavior: "contain",
+              overscrollBehaviorY: "contain",
             }}
           >
             <Box
