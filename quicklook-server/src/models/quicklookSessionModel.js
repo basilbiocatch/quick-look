@@ -55,11 +55,37 @@ const sessionSchema = new mongoose.Schema(
     chunkCount: { type: Number, default: 0 },
     /** Where chunks are stored: 'mongodb' or 'gcs' */
     storageType: { type: String, enum: ["mongodb", "gcs"], default: "mongodb" },
+    // AI UX Analytics (Phase 1) — all optional for backward compatibility
+    aiSummary: {
+      narrative: String,
+      emotionalScore: Number,
+      intent: String,
+      dropOffReason: String,
+      keyMoment: String,
+      generatedAt: Date,
+    },
+    frictionScore: { type: Number },
+    frictionPoints: [
+      {
+        type: { type: String },
+        timestamp: Number,
+        element: mongoose.Schema.Types.Mixed,
+        severity: String,
+        duration: Number,
+      },
+    ],
+    behaviorCluster: { type: String },
+    converted: { type: Boolean },
+    conversionValue: { type: Number },
+    goalEvents: [{ type: String }],
+    aiProcessed: { type: Boolean, index: true },
+    aiProcessedAt: { type: Date },
   },
   { collection: "quicklook_sessions", versionKey: false }
 );
 
 sessionSchema.index({ projectKey: 1, createdAt: -1 });
+sessionSchema.index({ aiProcessed: 1, status: 1, closedAt: -1 });
 
 sessionSchema.pre("save", function () {
   if (this.isNew && this.retentionDays) {

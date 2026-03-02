@@ -17,6 +17,21 @@ const projectSchema = new mongoose.Schema(
     excludedUrls: { type: [String], default: [] },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
+    // AI UX Analytics (Phase 1) — all optional
+    goals: [
+      {
+        name: String,
+        type: { type: String, enum: ["url", "event"] },
+        value: String,
+        aov: Number,
+      },
+    ],
+    aiSettings: {
+      enableAutoReports: { type: Boolean, default: false },
+      reportFrequency: { type: String, default: "weekly" },
+      minSampleSize: { type: Number, default: 50 },
+      sensitivityThreshold: { type: Number, default: 0.5 },
+    },
   },
   { collection: "quicklook_projects", versionKey: false }
 );

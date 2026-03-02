@@ -1,0 +1,42 @@
+# Build, push, and deploy quicklook-analytics to Cloud Run.
+# Run from quicklook-analytics/: gcloud builds submit --config=cloudbuild.yaml
+#
+# Env vars in the release:
+#   - GCP_PROJECT_ID is set from the build project.
+#   - QUICKLOOK_DB is set from Secret Manager (secret name: quicklook-db-uri). Create it once (see RELEASE.md).
+#   To use a plain env var instead of a secret, remove the --set-secrets line below and set QUICKLOOK_DB
+#   manually with: gcloud run services update quicklook-analytics --set-env-vars="QUICKLOOK_DB=..." ...
+#
+# _IMAGE_TAG defaults to "latest" for manual submit. For git tag: --substitutions=_IMAGE_TAG=$(git rev-parse --short HEAD)
+substitutions:
+  _IMAGE_TAG: "latest"
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-t"
+      - "gcr.io/${PROJECT_ID}/quicklook-analytics:${_IMAGE_TAG}"
+      - "."
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "push"
+      - "gcr.io/${PROJECT_ID}/quicklook-analytics:${_IMAGE_TAG}"
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: gcloud
+    args:
+      - "run"
+      - "deploy"
+      - "quicklook-analytics"
+      - "--image"
+      - "gcr.io/${PROJECT_ID}/quicklook-analytics:${_IMAGE_TAG}"
+      - "--region"
+      - "us-central1"
+      - "--platform"
+      - "managed"
+      - "--allow-unauthenticated"
+      - "--set-env-vars=GCP_PROJECT_ID=${PROJECT_ID}"
+      - "--set-secrets=QUICKLOOK_DB=quicklook-db-uri:latest"
+      - "--project"
+      - "${PROJECT_ID}"
+images:
+  - "gcr.io/${PROJECT_ID}/quicklook-analytics:${_IMAGE_TAG}"
