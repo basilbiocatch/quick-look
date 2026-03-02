@@ -46,7 +46,7 @@ export default function ReplayPage() {
   const [currentUrl, setCurrentUrl] = useState("");
   const [currentTime, setCurrentTime] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const [skipInactive, setSkipInactive] = useState(true);
+  const [skipInactive, setSkipInactive] = useState(false);
   const [devToolsOpen, setDevToolsOpen] = useState(false);
   const [sessionsList, setSessionsList] = useState([]);
   const [currentSessionIndex, setCurrentSessionIndex] = useState(-1);
@@ -367,19 +367,41 @@ export default function ReplayPage() {
         // Clear any existing content in the container
         containerRef.current.innerHTML = '';
         
-        const width = session.meta?.viewport?.width || 1024;
-        const height = session.meta?.viewport?.height || 768;
-        const w = Math.min(width, typeof window !== "undefined" ? window.innerWidth - 360 : width);
-        const h = Math.min(height, 600);
+        // Get viewport dimensions from meta event in the events array
+        const metaEvent = playerEvents.find((e) => e.type === 4);
+        const width = metaEvent?.data?.width || meta?.viewport?.width || session.meta?.viewport?.width || 1024;
+        const height = metaEvent?.data?.height || meta?.viewport?.height || session.meta?.viewport?.height || 768;
+        
+        // Ensure Meta event has proper dimensions by creating a patched events array
+        const eventsWithProperMeta = playerEvents.map((e) => {
+          if (e.type === 4 && (!e.data?.width || !e.data?.height)) {
+            return {
+              ...e,
+              data: {
+                ...e.data,
+                width: width,
+                height: height,
+              },
+            };
+          }
+          return e;
+        });
+        
+        const w = Math.max(100, Math.min(width, typeof window !== "undefined" ? window.innerWidth - 360 : width));
+        const h = Math.max(100, Math.min(height, 600));
+        
         playerInstance = new rrwebPlayer({
           target: containerRef.current,
           props: {
-            events: playerEvents,
+            events: eventsWithProperMeta,
             width: w,
             height: h,
             autoPlay: false,
             showController: false,
             skipInactive: false,
+            speed: 1,
+            maxScale: 0,
+            mouseTail: false,
           },
         });
         playerRef.current = playerInstance;
@@ -387,6 +409,10 @@ export default function ReplayPage() {
         requestAnimationFrame(() => {
           if (!mounted || !playerInstance) return;
           try {
+            if (playerInstance.setSpeed) {
+              playerInstance.setSpeed(1);
+            }
+            
             if (playerInstance.goto) playerInstance.goto(0, false);
             if (playerInstance.triggerResize) playerInstance.triggerResize();
             // Auto-play when entering a session

@@ -81,7 +81,9 @@ export default function PlayerControls({
 
   useEffect(() => {
     try {
-      if (playerRef?.current?.setSpeed && speed) playerRef.current.setSpeed(speed);
+      if (playerRef?.current?.setSpeed != null && typeof speed === "number") {
+        playerRef.current.setSpeed(speed);
+      }
     } catch (_) {}
   }, [speed, playerRef]);
 
@@ -194,7 +196,7 @@ export default function PlayerControls({
             ))}
           </Select>
         </FormControl>
-        <Tooltip title="Only skips gaps longer than 30 s; short activity plays at normal speed">
+        <Tooltip title="Compresses idle periods longer than 30s. Turn OFF for true real-time playback at 1x speed.">
           <FormControlLabel
             control={
               <Switch
