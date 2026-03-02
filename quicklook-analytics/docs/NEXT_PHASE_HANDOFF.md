@@ -4,6 +4,20 @@
 
 ---
 
+## Phase 3 implementation status (done)
+
+- **session_summarizer.py** – Gemini summary (narrative, emotionalScore, intent, dropOffReason, keyMoment); `ensure_summary_for_session()` in session_processor.
+- **GET /session/{sessionId}/ensure-summary** – On-demand only; caches aiSummary on session.
+- **behavior_clusterer.py** – Feature extraction from session doc, DBSCAN/K-Means, optional LLM cluster labels; feature caching on session; `run_clustering_for_project()`.
+- **POST /cluster** – `projectKey` (required), `limit=500`, `method=dbscan|kmeans`, `llm_labels=0|1`.
+- **GET /cluster** – List clusters for a project (`projectKey`, `limit=50`).
+- **Schema** – `quicklook_sessions`: aiSummary, optional `features`; new collection `quicklook_behavior_clusters`.
+- **quicklook-server** – Proxy routes `GET /sessions/:sessionId/ensure-summary` and `ensure-root-cause` (set `QUICKLOOK_ANALYTICS_URL`).
+- **ReplayPage** – Calls ensure-summary when opening session; RightPanel shows AI Summary (narrative, intent, emotional score, key moment, drop-off reason).
+- **BehaviorClustersPage** – Not implemented; use GET /cluster from analytics (or add proxy) to build it in a follow-up.
+
+---
+
 ## What’s already done (Phase 2)
 
 - **quicklook-analytics** (Python/FastAPI): service running; `POST /process` batch (optional `root_cause=0` for rule-only), `GET /session/{sessionId}/ensure-root-cause` for on-demand Gemini root cause (cached on session).

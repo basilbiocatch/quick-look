@@ -35,6 +35,11 @@ By default, each processed session gets **Gemini root-cause** for up to 5 fricti
 
 Use **root_cause=0** for “process everything”; use default **root_cause=1** for small batches or when you need AI explanations on a subset.
 
+## Phase 3: Session summaries & clustering
+
+- **ensure-summary:** `GET /session/{sessionId}/ensure-summary` (on-demand; batch does not run it).
+- **clustering:** `POST /cluster?projectKey=X&limit=500`, `GET /cluster?projectKey=X`. New collection `quicklook_behavior_clusters`.
+
 ## Local check (Phase 1)
 
 Use the **same MongoDB** as `quicklook-server` so the analytics service can read/update sessions.

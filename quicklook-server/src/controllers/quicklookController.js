@@ -299,3 +299,63 @@ export const deleteProject = async (req, res) => {
     return res.status(500).json({ success: false, error: err.message });
   }
 };
+
+/** Proxy to analytics: ensure session has AI summary (on-demand). Requires auth; session must belong to user's project. */
+export const ensureSummary = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const session = await QuicklookService.getSessionById(sessionId);
+    if (!session) {
+      return res.status(404).json({ success: false, error: "Session not found" });
+    }
+    const project = await getProjectForUser(session.projectKey, req.user.userId, res);
+    if (!project) return;
+    const base = process.env.QUICKLOOK_ANALYTICS_URL || process.env.ANALYTICS_BASE_URL || "";
+    if (!base) {
+      return res.status(503).json({
+        success: false,
+        error: "Analytics service not configured (QUICKLOOK_ANALYTICS_URL)",
+      });
+    }
+    const url = `${base.replace(/\/$/, "")}/session/${encodeURIComponent(sessionId)}/ensure-summary`;
+    const response = await fetch(url);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return res.status(response.status).json(data || { success: false, error: "Analytics request failed" });
+    }
+    return res.json(data);
+  } catch (err) {
+    logger.error("quicklook ensureSummary", { error: err.message });
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+/** Proxy to analytics: ensure session friction points have root cause (on-demand). */
+export const ensureRootCause = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const session = await QuicklookService.getSessionById(sessionId);
+    if (!session) {
+      return res.status(404).json({ success: false, error: "Session not found" });
+    }
+    const project = await getProjectForUser(session.projectKey, req.user.userId, res);
+    if (!project) return;
+    const base = process.env.QUICKLOOK_ANALYTICS_URL || process.env.ANALYTICS_BASE_URL || "";
+    if (!base) {
+      return res.status(503).json({
+        success: false,
+        error: "Analytics service not configured (QUICKLOOK_ANALYTICS_URL)",
+      });
+    }
+    const url = `${base.replace(/\/$/, "")}/session/${encodeURIComponent(sessionId)}/ensure-root-cause`;
+    const response = await fetch(url);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return res.status(response.status).json(data || { success: false, error: "Analytics request failed" });
+    }
+    return res.json(data);
+  } catch (err) {
+    logger.error("quicklook ensureRootCause", { error: err.message });
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};

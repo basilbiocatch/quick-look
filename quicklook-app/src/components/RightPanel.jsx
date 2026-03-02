@@ -29,6 +29,8 @@ import GestureIcon from "@mui/icons-material/Gesture";
 import TouchAppIcon from "@mui/icons-material/TouchApp";
 import PublicIcon from "@mui/icons-material/Public";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
+import PsychologyIcon from "@mui/icons-material/Psychology";
+import CircularProgress from "@mui/material/CircularProgress";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import SaveIcon from "@mui/icons-material/Save";
@@ -136,7 +138,20 @@ function BrowserIcon() {
   return <LanguageIcon sx={iconSx} />;
 }
 
-export default function RightPanel({ session, events, meta, onSeek, currentTimeMs, excludedUrls = [], onExcludeUrl, onUnexcludeUrl, onSaveExclusions }) {
+export default function RightPanel({
+  session,
+  events,
+  meta,
+  onSeek,
+  currentTimeMs,
+  excludedUrls = [],
+  onExcludeUrl,
+  onUnexcludeUrl,
+  onSaveExclusions,
+  aiSummary = null,
+  summaryLoading = false,
+  summaryError = "",
+}) {
   const navigate = useNavigate();
   const [activitySearch, setActivitySearch] = useState("");
   const [setupDialogOpen, setSetupDialogOpen] = useState(false);
@@ -263,6 +278,36 @@ ${setupSnippet}`
         >
           Show all sessions
         </Typography>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        title="AI Summary"
+        defaultOpen={true}
+        action={
+          <PsychologyIcon sx={{ fontSize: 18, color: "primary.main" }} />
+        }
+      >
+        {summaryLoading && (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, py: 1 }}>
+            <CircularProgress size={18} />
+            <Typography variant="caption" color="text.secondary">Generating summary…</Typography>
+          </Box>
+        )}
+        {summaryError && !summaryLoading && (
+          <Typography variant="caption" color="error">{summaryError}</Typography>
+        )}
+        {aiSummary && !summaryLoading && (
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>{aiSummary.narrative}</Typography>
+            <PropertyRow label="Intent" value={aiSummary.intent || "—"} />
+            <PropertyRow label="Emotional score" value={aiSummary.emotionalScore != null ? `${aiSummary.emotionalScore}/10` : "—"} />
+            {aiSummary.keyMoment && <PropertyRow label="Key moment" value={aiSummary.keyMoment} />}
+            {aiSummary.dropOffReason && <PropertyRow label="Drop-off reason" value={aiSummary.dropOffReason} />}
+          </Box>
+        )}
+        {!aiSummary && !summaryLoading && !summaryError && (
+          <Typography variant="caption" color="text.secondary">No summary yet. Open the session to generate one.</Typography>
+        )}
       </CollapsibleSection>
 
       <CollapsibleSection

@@ -26,7 +26,7 @@ import ReplayIcon from "@mui/icons-material/Replay";
 import SkipNextIcon from "@mui/icons-material/SkipNext";
 import CloseIcon from "@mui/icons-material/Close";
 import { useParams, useNavigate } from "react-router-dom";
-import { getSession, getEvents, getSessions, getProject, updateProject } from "../api/quicklookApi";
+import { getSession, getEvents, getSessions, getProject, updateProject, getEnsureSummary } from "../api/quicklookApi";
 import { getEventsDurationMs, getPagesFromEvents, getEventMarksFromEvents, getEventMarksWithTypes, urlPageKey } from "../utils/activityList";
 import RightPanel from "../components/RightPanel";
 import PlayerControls from "../components/PlayerControls";
@@ -57,6 +57,9 @@ export default function ReplayPage() {
   const [autoPlay, setAutoPlay] = useState(false);
   const [excludedUrls, setExcludedUrls] = useState([]);
   const [skippedInactivityMsg, setSkippedInactivityMsg] = useState(null);
+  const [aiSummary, setAiSummary] = useState(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState("");
   const countdownRef = useRef(null);
   const countdownIntervalRef = useRef(null);
   const skipMessageTimeoutRef = useRef(null);
@@ -64,12 +67,15 @@ export default function ReplayPage() {
   useEffect(() => {
     if (!sessionId) return;
     let cancelled = false;
-    // Reset overlay state when session changes
+    // Reset overlay and AI summary state when session changes
     setShowEndOverlay(false);
     setCountdown(5);
     setCurrentTime(0);
     setPlaying(false);
     setExcludedUrls([]);
+    setAiSummary(null);
+    setSummaryError("");
+    setSummaryLoading(false);
     (async () => {
       setLoading(true);
       setError("");
@@ -99,6 +105,27 @@ export default function ReplayPage() {
           setSessionsList(sessions);
           const index = sessions.findIndex((s) => s.sessionId === sessionId);
           setCurrentSessionIndex(index);
+        }
+
+        // On-demand AI summary (analytics): ensure-summary when opening session
+        setAiSummary(sessionData?.aiSummary ?? null);
+        setSummaryError("");
+        if (sessionData?.aiSummary) {
+          setSummaryLoading(false);
+        } else {
+          setSummaryLoading(true);
+          try {
+            const sumRes = await getEnsureSummary(sessionId);
+            if (cancelled) return;
+            const data = sumRes.data;
+            setAiSummary(data?.aiSummary ?? null);
+            setSummaryError("");
+          } catch (sumErr) {
+            if (!cancelled) setSummaryError(sumErr.response?.data?.error || sumErr.message || "Summary unavailable");
+            if (!cancelled) setAiSummary(null);
+          } finally {
+            if (!cancelled) setSummaryLoading(false);
+          }
         }
       } catch (err) {
         if (!cancelled) setError(err.response?.data?.error || err.message || "Failed to load");
@@ -997,6 +1024,9 @@ export default function ReplayPage() {
           onExcludeUrl={handleExcludeUrl}
           onUnexcludeUrl={handleUnexcludeUrl}
           onSaveExclusions={handleSaveExclusions}
+          aiSummary={aiSummary}
+          summaryLoading={summaryLoading}
+          summaryError={summaryError}
         />
       </Box>
       {/* Brief message when "Skip inactivity" jumps over a long gap */}

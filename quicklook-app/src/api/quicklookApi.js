@@ -35,6 +35,10 @@ export const getSessions = (params) => {
 };
 export const getSession = (id) => api.get(`/sessions/${id}`);
 export const getEvents = (id) => api.get(`/sessions/${id}/events`);
+/** On-demand AI summary (analytics). Returns { aiSummary, generated }. */
+export const getEnsureSummary = (sessionId) => api.get(`/sessions/${sessionId}/ensure-summary`);
+/** On-demand root cause for friction points (analytics). Returns { frictionPoints, generated }. */
+export const getEnsureRootCause = (sessionId) => api.get(`/sessions/${sessionId}/ensure-root-cause`);
 
 export const getProjects = () => api.get("/projects");
 export const createProject = (body) => api.post("/projects", body);

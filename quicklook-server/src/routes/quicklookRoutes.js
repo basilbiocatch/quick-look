@@ -33,5 +33,7 @@ router.post("/sessions/:sessionId/end", validateOrigin, quicklookController.endS
 router.get("/sessions", requireAuth, quicklookController.getSessions);
 router.get("/sessions/:sessionId", requireAuth, quicklookController.getSession);
 router.get("/sessions/:sessionId/events", requireAuth, quicklookController.getEvents);
+router.get("/sessions/:sessionId/ensure-summary", requireAuth, quicklookController.ensureSummary);
+router.get("/sessions/:sessionId/ensure-root-cause", requireAuth, quicklookController.ensureRootCause);
 
 export default router;
