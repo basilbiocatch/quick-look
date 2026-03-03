@@ -75,7 +75,8 @@ export async function login(req, res) {
     });
   } catch (err) {
     logger.error("auth login", { error: err.message });
-    return res.status(500).json({ success: false, error: "Login failed" });
+    const message = process.env.NODE_ENV !== "production" ? err.message : "Login failed";
+    return res.status(500).json({ success: false, error: message });
   }
 }
 

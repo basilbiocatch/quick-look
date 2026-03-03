@@ -12,9 +12,10 @@ SERVICE_NAME="quicklook-server"
 CONFIG_FILE="$REPO_ROOT/release.config.sh"
 
 usage() {
-  echo "Usage: $0 local | production | setup"
+  echo "Usage: $0 local | production | all | setup"
   echo "  local      - Build SDK, prepare env, start server and app dev servers"
-  echo "  production - Build SDK + app, populate server public/, deploy to Cloud Run"
+  echo "  production - Build SDK + app, populate server public/, deploy server to Cloud Run"
+  echo "  all        - Same as production, then build and deploy analytics worker (server + app + analytics)"
   echo "  setup      - One-time GCP setup (APIs, Artifact Registry)"
   exit 1
 }
@@ -58,7 +59,7 @@ run_production() {
   cp -f "$REPO_ROOT/quicklook-sdk/dist/quicklook-sdk.js" "$pub/"
   cp -f "$REPO_ROOT/quicklook-sdk/dist/compress.worker.js" "$pub/"
 
-  # App: same-origin API (empty base), base path /app/
+  # App at root (/), API at /api (same-origin)
   echo "VITE_API_BASE_URL=" > "$REPO_ROOT/quicklook-app/.env"
   
   # Clean Vite cache if locked (dev server running)
@@ -69,9 +70,8 @@ run_production() {
     }
   fi
   
-  (cd "$REPO_ROOT/quicklook-app" && npm ci --no-audit --no-fund && VITE_APP_BASE=/app/ npm run build)
-  rm -rf "$pub/app"
-  cp -r "$REPO_ROOT/quicklook-app/dist" "$pub/app"
+  (cd "$REPO_ROOT/quicklook-app" && npm ci --no-audit --no-fund && npm run build)
+  cp -r "$REPO_ROOT/quicklook-app/dist"/* "$pub/"
 
   # Deploy via Cloud Build
   if ! command -v gcloud &>/dev/null; then
@@ -88,7 +88,27 @@ run_production() {
     echo "QUICKLOOK_SERVICE_URL=$url" > "$CONFIG_FILE"
     echo "[release] Service URL: $url (saved to release.config.sh)"
   fi
+
+  # Set QUICKLOOK_ANALYTICS_URL on the server so it can proxy to analytics (insights, reports, retrain, etc.)
+  local analytics_url
+  analytics_url="$(gcloud run services describe quicklook-analytics --region="$REGION" --format='value(status.url)' --project="$GCP_PROJECT" 2>/dev/null || true)"
+  if [[ -n "$analytics_url" ]]; then
+    gcloud run services update "$SERVICE_NAME" --region="$REGION" --update-env-vars="QUICKLOOK_ANALYTICS_URL=${analytics_url}" --project="$GCP_PROJECT" --quiet 2>/dev/null || true
+    echo "[release] Set QUICKLOOK_ANALYTICS_URL=$analytics_url on $SERVICE_NAME"
+  fi
+
   echo "[release] If first deploy, set env vars: gcloud run services update $SERVICE_NAME --region=$REGION --set-env-vars=QUICKLOOK_DB=...,QUICKLOOK_API_KEY=..."
+}
+
+# ---- all (production + analytics) ----
+run_all() {
+  echo "[release] Releasing everything: server (+ app + SDK), then analytics worker..."
+  export GCP_PROJECT_ID="${GCP_PROJECT_ID:-$GCP_PROJECT}"
+  export REGION
+  run_production
+  echo ""
+  echo "[release] Deploying analytics worker..."
+  "$REPO_ROOT/deploy-analytics.sh" "$@"
 }
 
 # ---- setup ----
@@ -116,6 +136,7 @@ run_setup() {
 case "${1:-}" in
   local)       run_local ;;
   production)  run_production ;;
+  all)         shift; run_all "$@" ;;
   setup)       run_setup ;;
   *)           usage ;;
 esac

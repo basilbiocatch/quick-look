@@ -11,6 +11,7 @@ import {
 } from "@mui/material";
 import VideocamIcon from "@mui/icons-material/Videocam";
 import BugReportIcon from "@mui/icons-material/BugReport";
+import InsightsIcon from "@mui/icons-material/Insights";
 import CheckIcon from "@mui/icons-material/Check";
 import { getPublicAssetUrl, getBasePath } from "../utils/baseUrl";
 
@@ -79,13 +80,25 @@ export default function MarketingHomePage() {
               pointerEvents: "auto",
             }}
           >
-            <Link to="/" style={{ textDecoration: "none", color: "inherit", display: "flex", alignItems: "center", gap: 10 }}>
-              <img src={getPublicAssetUrl("logo.png")} alt="Quicklook" style={{ height: 32, width: 32, display: "block" }} />
+            <Link to="/" style={{ textDecoration: "none", color: "inherit", display: "flex", alignItems: "center", gap: 10 }} aria-label="Quicklook home">
+              <img src={getPublicAssetUrl("logo.png")} alt="Quicklook - Session replay and DevTools for developers" width={32} height={32} style={{ display: "block" }} />
               <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.25rem" }}>
                 Quicklook
               </Typography>
             </Link>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, pointerEvents: "auto" }}>
+              <Button
+                component="a"
+                href="#pricing"
+                color="inherit"
+                sx={{
+                  color: "text.secondary",
+                  transition: "color 0.2s ease, transform 0.2s ease",
+                  "&:hover": { color: "text.primary", transform: "translateY(-1px)" },
+                }}
+              >
+                Pricing
+              </Button>
               <Button
                 component="a"
                 href={loginHref}
@@ -187,8 +200,8 @@ export default function MarketingHomePage() {
                 built for developers
               </Box>
             </Typography>
-            <Typography variant="h6" color="text.secondary" sx={{ mb: 4, fontWeight: 400, fontSize: { xs: "1rem", md: "1.25rem" } }}>
-              See exactly what users did. Debug with session recordings and integrated DevTools — no guesswork.
+            <Typography variant="h6" color="text.secondary" sx={{ mb: 4, fontWeight: 400, fontSize: { xs: "1rem", md: "1.25rem" } }} component="p">
+              See exactly what users did. Debug with session recordings and integrated DevTools—reproduce bugs and improve UX with no guesswork.
             </Typography>
             <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, justifyContent: "center" }}>
               <Button
@@ -196,6 +209,7 @@ export default function MarketingHomePage() {
                 to="/signup"
                 variant="contained"
                 size="large"
+                aria-label="Try Quicklook free"
                 sx={{
                   px: 3,
                   py: 1.5,
@@ -207,7 +221,7 @@ export default function MarketingHomePage() {
               >
                 Try Free
               </Button>
-              <Button component={Link} to="/login" variant="outlined" size="large" sx={{ px: 3, py: 1.5 }}>
+              <Button component={Link} to="/login" variant="outlined" size="large" sx={{ px: 3, py: 1.5 }} aria-label="Log in to Quicklook">
                 Log in
               </Button>
             </Box>
@@ -222,7 +236,7 @@ export default function MarketingHomePage() {
             Everything you need to understand and fix issues
           </Typography>
           <Grid container spacing={4} justifyContent="center">
-            <Grid item xs={12} md={6}>
+            <Grid item xs={12} md={4}>
               <Card
                 elevation={0}
                 sx={{
@@ -260,7 +274,7 @@ export default function MarketingHomePage() {
                 </CardContent>
               </Card>
             </Grid>
-            <Grid item xs={12} md={6}>
+            <Grid item xs={12} md={4}>
               <Card
                 elevation={0}
                 sx={{
@@ -298,7 +312,92 @@ export default function MarketingHomePage() {
                 </CardContent>
               </Card>
             </Grid>
+            <Grid item xs={12} md={4}>
+              <Card
+                elevation={0}
+                sx={{
+                  height: "100%",
+                  border: "1px solid",
+                  borderColor: "divider",
+                  borderRadius: 2,
+                  overflow: "hidden",
+                  bgcolor: "background.paper",
+                  transition: "border-color 0.2s, box-shadow 0.2s",
+                  "&:hover": {
+                    borderColor: "primary.main",
+                    boxShadow: "0 8px 32px rgba(190,149,250,0.15)",
+                  },
+                }}
+              >
+                <Box
+                  sx={{
+                    height: 140,
+                    background: "linear-gradient(135deg, rgba(190,149,250,0.2) 0%, rgba(99,102,241,0.1) 100%)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <InsightsIcon sx={{ fontSize: 56, color: "primary.main" }} />
+                </Box>
+                <CardContent sx={{ p: 3 }}>
+                  <Typography variant="h6" fontWeight={600} gutterBottom>
+                    AI Insights
+                  </Typography>
+                  <Typography color="text.secondary">
+                    Friction detection, conversion impact, and suggested fixes with predicted lift. Get AI session summaries, root cause analysis, and A/B test ideas so you can understand and fix issues at scale.
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
           </Grid>
+        </Container>
+      </Box>
+
+      {/* FAQ - Session replay and Quicklook for developers */}
+      <Box
+        component="section"
+        sx={{ ...sectionSx, bgcolor: "rgba(255,255,255,0.02)" }}
+        aria-labelledby="faq-heading"
+        itemScope
+        itemType="https://schema.org/FAQPage"
+      >
+        <Container maxWidth="md">
+          <Typography id="faq-heading" component="h2" variant="h4" fontWeight={700} textAlign="center" sx={{ mb: 6 }}>
+            Frequently Asked Questions
+          </Typography>
+          <Box component="dl" sx={{ m: 0 }}>
+            <Box component="div" itemProp="mainEntity" itemScope itemType="https://schema.org/Question" sx={{ mb: 4 }}>
+              <Typography component="dt" variant="h6" fontWeight={600} sx={{ mb: 1 }} itemProp="name">What is session replay?</Typography>
+              <Typography component="dd" color="text.secondary" sx={{ m: 0, pl: 0 }} itemScope itemProp="acceptedAnswer" itemType="https://schema.org/Answer">
+                <span itemProp="text">Session replay is a developer tool that records how users interact with your web app—clicks, scrolls, navigation, and inputs—so you can replay the session exactly as it happened. It helps you reproduce bugs and understand user behavior.</span>
+              </Typography>
+            </Box>
+            <Box component="div" itemProp="mainEntity" itemScope itemType="https://schema.org/Question" sx={{ mb: 4 }}>
+              <Typography component="dt" variant="h6" fontWeight={600} sx={{ mb: 1 }} itemProp="name">How does Quicklook help developers debug?</Typography>
+              <Typography component="dd" color="text.secondary" sx={{ m: 0, pl: 0 }} itemScope itemProp="acceptedAnswer" itemType="https://schema.org/Answer">
+                <span itemProp="text">Quicklook combines session replay with integrated DevTools: you see the user&apos;s recording alongside console logs, network requests, and user context in one place. No more guessing what the user did—replay the session and debug with full context.</span>
+              </Typography>
+            </Box>
+            <Box component="div" itemProp="mainEntity" itemScope itemType="https://schema.org/Question" sx={{ mb: 4 }}>
+              <Typography component="dt" variant="h6" fontWeight={600} sx={{ mb: 1 }} itemProp="name">Is there a free tier?</Typography>
+              <Typography component="dd" color="text.secondary" sx={{ m: 0, pl: 0 }} itemScope itemProp="acceptedAnswer" itemType="https://schema.org/Answer">
+                <span itemProp="text">Yes. Quicklook offers a free tier with 1,000 sessions per month and 30-day retention. You get session recording to get started; Pro adds DevTools, 90-day retention, multiple projects, AI Insights (conversion impact, friction patterns), session summaries, and suggested fixes with predicted lift for A/B tests.</span>
+              </Typography>
+            </Box>
+            <Box component="div" itemProp="mainEntity" itemScope itemType="https://schema.org/Question" sx={{ mb: 4 }}>
+              <Typography component="dt" variant="h6" fontWeight={600} sx={{ mb: 1 }} itemProp="name">How do I add session replay to my app?</Typography>
+              <Typography component="dd" color="text.secondary" sx={{ m: 0, pl: 0 }} itemScope itemProp="acceptedAnswer" itemType="https://schema.org/Answer">
+                <span itemProp="text">Add the Quicklook script to your site, create a project in the dashboard, and start recording. The SDK captures DOM events and sends them to Quicklook so you can replay sessions in the dashboard.</span>
+              </Typography>
+            </Box>
+            <Box component="div" itemProp="mainEntity" itemScope itemType="https://schema.org/Question" sx={{ mb: 0 }}>
+              <Typography component="dt" variant="h6" fontWeight={600} sx={{ mb: 1 }} itemProp="name">What is included in Quicklook DevTools?</Typography>
+              <Typography component="dd" color="text.secondary" sx={{ m: 0, pl: 0 }} itemScope itemProp="acceptedAnswer" itemType="https://schema.org/Answer">
+                <span itemProp="text">DevTools in Quicklook include console logs, network requests, and user context (device, URL, etc.) synchronized with the session replay. Everything appears in one view so you can debug faster.</span>
+              </Typography>
+            </Box>
+          </Box>
         </Container>
       </Box>
 
@@ -390,6 +489,10 @@ export default function MarketingHomePage() {
                     <li><CheckIcon sx={{ fontSize: 18 }} /> DevTools (console &amp; network)</li>
                     <li><CheckIcon sx={{ fontSize: 18 }} /> 90-day retention</li>
                     <li><CheckIcon sx={{ fontSize: 18 }} /> Multiple projects</li>
+                    <li><CheckIcon sx={{ fontSize: 18 }} /> AI Insights dashboard (conversion impact, friction patterns)</li>
+                    <li><CheckIcon sx={{ fontSize: 18 }} /> Friction detection &amp; AI root cause per session</li>
+                    <li><CheckIcon sx={{ fontSize: 18 }} /> AI session summaries (intent, drop-off, key moments)</li>
+                    <li><CheckIcon sx={{ fontSize: 18 }} /> Suggested fixes with predicted lift (A/B test ideas)</li>
                   </Box>
                   <Button
                     component={Link}

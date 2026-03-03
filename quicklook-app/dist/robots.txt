@@ -1,0 +1,14 @@
+User-agent: *
+Allow: /
+Allow: /login
+Allow: /signup
+Disallow: /api/
+Disallow: /sessions/
+Disallow: /projects/
+Disallow: /insights/
+Disallow: /reports/
+Disallow: /ab-tests
+Disallow: /accuracy
+Disallow: /settings
+
+Sitemap: https://quicklook.io/sitemap.xml

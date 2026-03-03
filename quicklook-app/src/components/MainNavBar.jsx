@@ -23,7 +23,7 @@ import HomeIcon from "@mui/icons-material/Home";
 import { getProjects } from "../api/quicklookApi";
 import { getPublicAssetUrl } from "../utils/baseUrl";
 
-const NAV_WIDTH = 64;
+export const NAV_WIDTH = 64;
 
 const iconButtonSx = {
   width: 40,
@@ -76,9 +76,17 @@ export default function MainNavBar() {
   const isAccuracyActive = Boolean(routeProjectKey && pathname.includes("/accuracy"));
   const isSettingsActive = pathname.includes("/settings");
 
+  const selectedProject = projectKey ? projects.find((p) => p.projectKey === projectKey) : null;
+  const projectInitial = selectedProject?.name ? selectedProject.name.trim().charAt(0).toUpperCase() : null;
+
   return (
     <Box
+      component="nav"
       sx={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        bottom: 0,
         width: NAV_WIDTH,
         minWidth: NAV_WIDTH,
         flexShrink: 0,
@@ -89,6 +97,7 @@ export default function MainNavBar() {
         flexDirection: "column",
         alignItems: "stretch",
         py: 1.5,
+        zIndex: 1100,
       }}
     >
       {/* Logo */}
@@ -297,11 +306,12 @@ export default function MainNavBar() {
 
       {/* Select project - at bottom */}
       <Box sx={{ display: "flex", justifyContent: "center", py: 0.5 }}>
-        <Tooltip title="Select project" placement="right">
+        <Tooltip title={selectedProject ? `${selectedProject.name} (select project)` : "Select project"} placement="right">
           <IconButton
             onClick={(e) => setProjectMenuAnchor(e.currentTarget)}
             sx={{
               ...iconButtonSx,
+              position: "relative",
               ...(projectMenuAnchor && {
                 color: "#fff",
                 bgcolor: "rgba(255,255,255,0.18)",
@@ -310,6 +320,29 @@ export default function MainNavBar() {
             }}
           >
             <FolderIcon sx={{ fontSize: 24 }} />
+            {projectInitial && (
+              <Box
+                component="span"
+                sx={{
+                  position: "absolute",
+                  bottom: 2,
+                  right: 2,
+                  width: 14,
+                  height: 14,
+                  borderRadius: "50%",
+                  bgcolor: "primary.main",
+                  color: "background.paper",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "0.65rem",
+                  fontWeight: 700,
+                  lineHeight: 1,
+                }}
+              >
+                {projectInitial}
+              </Box>
+            )}
           </IconButton>
         </Tooltip>
       </Box>

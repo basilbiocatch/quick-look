@@ -37,10 +37,10 @@ app.get("/health", (req, res) => {
 
 if (fs.existsSync(publicDir)) {
   app.use(express.static(publicDir, { index: false }));
-  const appIndex = path.join(publicDir, "app", "index.html");
+  const appIndex = path.join(publicDir, "index.html");
   if (fs.existsSync(appIndex)) {
-    app.get("/app", (req, res) => res.sendFile(appIndex));
-    app.get("/app/*", (req, res) => res.sendFile(appIndex));
+    app.get("/", (req, res) => res.sendFile(appIndex));
+    app.get("*", (req, res) => res.sendFile(appIndex));
   }
 } else {
   app.use(express.static(sdkDist, { index: false }));

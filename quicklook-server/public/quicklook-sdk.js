@@ -34,7 +34,8 @@
   }
 
   // src/collectors/deviceId.js
-  var STORAGE_KEY = "quicklook_device_id";
+  var DEVICE_ID_STORAGE_KEY = "quicklook_device_id";
+  var STORAGE_KEY = DEVICE_ID_STORAGE_KEY;
   var storedDeviceId = null;
   function hashString(str, seed = 0) {
     let h1 = 3735928559 ^ seed;
@@ -365,6 +366,7 @@
   var sessionChainId = null;
   var parentSessionId = null;
   var sequenceNumber = 1;
+  var deviceIdEnabled = false;
   var startPromise = null;
   function getStoredSessionId() {
     try {
@@ -442,6 +444,7 @@
     if (config.maxSessionDuration !== void 0) {
       maxSessionDuration = config.maxSessionDuration;
     }
+    if (typeof config.deviceIdEnabled === "boolean") deviceIdEnabled = config.deviceIdEnabled;
   }
   function shouldRotateSession() {
     if (!sessionStartTime || !sessionId || maxSessionDuration <= 0) {
@@ -481,8 +484,10 @@
           user: user || {},
           retentionDays
         };
-        const deviceId = getDeviceId();
-        if (deviceId) payload.deviceId = deviceId;
+        if (deviceIdEnabled) {
+          const deviceId = getDeviceId();
+          if (deviceId) payload.deviceId = deviceId;
+        }
         if (attributes != null && typeof attributes === "object" && !Array.isArray(attributes)) {
           payload.attributes = attributes;
         }
@@ -17442,7 +17447,6 @@
       includedUrls: options.includedUrls,
       maxSessionDuration: options.maxSessionDuration !== void 0 ? options.maxSessionDuration : 60 * 60 * 1e3
     });
-    getOrCreateDeviceId(apiUrlNorm);
     setActivityConfig({
       inactivityTimeout: options.inactivityTimeout !== void 0 ? options.inactivityTimeout : 5 * 60 * 1e3,
       pauseOnHidden: options.pauseOnHidden !== void 0 ? options.pauseOnHidden : true
@@ -17502,12 +17506,18 @@
       }
     }
     (async () => {
-      if (options.excludedUrls === void 0 && typeof fetch !== "undefined") {
+      if (typeof fetch !== "undefined") {
         try {
           const r = await fetch(`${apiUrlNorm}/api/quicklook/projects/${encodeURIComponent(projectKey2)}/config`);
           const d = await r.json();
-          if (d && d.success && Array.isArray(d.excludedUrls)) {
-            setConfig({ excludedUrls: d.excludedUrls });
+          if (d && d.success) {
+            const configUpdate = {};
+            if (Array.isArray(d.excludedUrls)) configUpdate.excludedUrls = d.excludedUrls;
+            if (typeof d.deviceIdEnabled === "boolean") configUpdate.deviceIdEnabled = d.deviceIdEnabled;
+            if (Object.keys(configUpdate).length) setConfig(configUpdate);
+            if (configUpdate.deviceIdEnabled) {
+              getOrCreateDeviceId(apiUrlNorm);
+            }
           }
         } catch (_) {
         }

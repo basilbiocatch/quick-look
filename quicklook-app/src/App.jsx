@@ -12,7 +12,7 @@ import SignupPage from "./pages/SignupPage";
 import NewProjectPage from "./pages/NewProjectPage";
 import ProjectSettingsPage from "./pages/ProjectSettingsPage";
 import ProtectedRoute from "./components/ProtectedRoute";
-import MainNavBar from "./components/MainNavBar";
+import MainNavBar, { NAV_WIDTH } from "./components/MainNavBar";
 import { Box, CircularProgress } from "@mui/material";
 import { useState, useEffect } from "react";
 import { useAuth } from "./contexts/AuthContext";
@@ -129,7 +129,7 @@ function AppLayout() {
   return (
     <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: "background.default" }}>
       <MainNavBar />
-      <Box component="main" sx={{ flex: 1, minWidth: 0 }}>
+      <Box component="main" sx={{ flex: 1, minWidth: 0, marginLeft: `${NAV_WIDTH}px` }}>
         <Outlet />
       </Box>
     </Box>

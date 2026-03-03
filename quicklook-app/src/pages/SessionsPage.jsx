@@ -253,6 +253,9 @@ const DEFAULT_VISIBLE_COLUMNS = {
 
 const ROW_HEIGHT = 60;
 const COLUMN_WIDTHS = { user: 220, play: 52, date: 160, events: 64, duration: 72, pages: 56, device: 120, location: 110, ip: 120 };
+
+/** Page size for sessions list; server allows up to 200 per request. */
+const SESSIONS_PAGE_SIZE = 100;
 const COLUMN_GAP = 2; // mr in theme spacing units, applied consistently
 
 const SAVED_VIEWS_STORAGE_KEY = (projectKey) => `quicklook_saved_views_${projectKey || ""}`;
@@ -283,6 +286,7 @@ export default function SessionsPage() {
   }, [routeProjectKey, navigate]);
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("closed");
@@ -388,7 +392,7 @@ export default function SessionsPage() {
         status: status || undefined,
         from: fromTo.from,
         to: fromTo.to,
-        limit: 100,
+        limit: SESSIONS_PAGE_SIZE,
         skip: 0,
       });
       const data = res.data?.data || [];
@@ -404,20 +408,49 @@ export default function SessionsPage() {
     }
   }, [projectKey, status, fromTo.from, fromTo.to]);
 
+  const loadMore = useCallback(async () => {
+    if (!projectKey.trim() || loadingMore || sessions.length >= total) return;
+    setLoadingMore(true);
+    setError("");
+    try {
+      const res = await getSessions({
+        projectKey: projectKey.trim(),
+        status: status || undefined,
+        from: fromTo.from,
+        to: fromTo.to,
+        limit: SESSIONS_PAGE_SIZE,
+        skip: sessions.length,
+      });
+      const data = res.data?.data || [];
+      setSessions((prev) => [...prev, ...data]);
+      setTotal((prevTotal) => res.data?.total != null ? res.data.total : Math.max(prevTotal, sessions.length + data.length));
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || "Failed to load more sessions");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [projectKey, status, fromTo.from, fromTo.to, sessions.length, total, loadingMore]);
+
   const handleRefresh = () => {
     load({ isRefresh: true, silent: false });
   };
+
+  const sessionsLengthRef = React.useRef(0);
+  sessionsLengthRef.current = sessions.length;
 
   useEffect(() => {
     load();
     // Poll for updates when viewing active sessions or "All sessions" (refresh every 3 seconds)
     // Also poll closed sessions (refresh every 5 seconds)
     // Use silent refresh (no loading spinner) for polling
+    // When user has loaded more than one page, skip poll so we don't replace the list
     let interval;
     if (projectKey.trim()) {
       const pollInterval = status === "active" || status === "" ? 3000 : 5000; // More frequent for active sessions
       interval = setInterval(() => {
-        load({ isRefresh: true, silent: true }); // Silent refresh - won't show loading spinner
+        if (sessionsLengthRef.current <= SESSIONS_PAGE_SIZE) {
+          load({ isRefresh: true, silent: true }); // Silent refresh - won't show loading spinner
+        }
       }, pollInterval);
     }
     return () => {
@@ -1137,6 +1170,38 @@ export default function SessionsPage() {
                       </>
                     ) : (
                       <Typography color="text.secondary">No sessions match your filters.</Typography>
+                    )}
+                  </Box>
+                )}
+                {/* Pagination: show count and Load more when there are more sessions than loaded */}
+                {!loading && total > 0 && (
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      flexWrap: "wrap",
+                      gap: 1,
+                      px: 2,
+                      py: 1.5,
+                      borderTop: "1px solid",
+                      borderColor: "divider",
+                      bgcolor: "action.hover",
+                    }}
+                  >
+                    <Typography variant="caption" color="text.secondary">
+                      Showing {sessions.length.toLocaleString()} of {total.toLocaleString()} sessions
+                    </Typography>
+                    {sessions.length < total && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={loadMore}
+                        disabled={loadingMore}
+                        sx={{ textTransform: "none" }}
+                      >
+                        {loadingMore ? "Loading…" : "Load more"}
+                      </Button>
                     )}
                   </Box>
                 )}

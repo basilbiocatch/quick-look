@@ -5,7 +5,10 @@ import { ThemeProvider, CssBaseline } from "@mui/material";
 import { darkTheme } from "./theme";
 import { AuthProvider } from "./contexts/AuthContext";
 import { getBasePath } from "./utils/baseUrl";
+import { initQuicklookWebsite } from "./quicklookWebsite";
 import App from "./App";
+
+initQuicklookWebsite();
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>

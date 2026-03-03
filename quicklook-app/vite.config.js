@@ -5,7 +5,9 @@ import basicSsl from "@vitejs/plugin-basic-ssl";
 export default defineConfig(({ mode }) => {
   // Load .env so proxy target is correct (Vite may not have loaded it before config runs).
   const env = loadEnv(mode, process.cwd(), "");
-  const proxyTarget = env.VITE_PROXY_TARGET || env.VITE_API_BASE_URL || "http://localhost:3080";
+  // Default to HTTPS in dev when app is served over HTTPS (e.g. https://localhost:5174) so /api proxy matches server.
+  const defaultTarget = mode === "development" ? "https://localhost:3080" : "http://localhost:3080";
+  const proxyTarget = env.VITE_PROXY_TARGET || env.VITE_API_BASE_URL || defaultTarget;
   const isHttpsTarget = proxyTarget.startsWith("https");
 
   return {
