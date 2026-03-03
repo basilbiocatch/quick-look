@@ -347,7 +347,10 @@ export const ensureRootCause = async (req, res) => {
         error: "Analytics service not configured (QUICKLOOK_ANALYTICS_URL)",
       });
     }
-    const url = `${base.replace(/\/$/, "")}/session/${encodeURIComponent(sessionId)}/ensure-root-cause`;
+    let url = `${base.replace(/\/$/, "")}/session/${encodeURIComponent(sessionId)}/ensure-root-cause`;
+    if (req.query?.force === "1" || req.query?.force === "true") {
+      url += "?force=1";
+    }
     const response = await fetch(url);
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {

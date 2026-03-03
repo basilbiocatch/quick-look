@@ -10,6 +10,8 @@ from fastapi import FastAPI, Request, Response
 
 from src.db.connection import get_database
 from src.processors.behavior_clusterer import run_clustering_for_project
+from src.processors.insight_generator import run_insight_generation_for_project
+from src.processors.pattern_library import sync_patterns_from_insights
 from src.processors.session_processor import (
     ensure_root_cause_for_session,
     ensure_summary_for_session,
@@ -30,13 +32,14 @@ async def health() -> dict[str, str]:
 
 
 @app.get("/session/{session_id}/ensure-root-cause")
-async def ensure_root_cause(session_id: str) -> dict[str, Any]:
+async def ensure_root_cause(session_id: str, request: Request) -> dict[str, Any]:
     """
     On-demand: ensure this session's friction points have Gemini root cause. Call when user opens
     a session (e.g. ReplayPage). If already present, returns immediately; otherwise runs Gemini,
-    persists to session, then returns. Next open is fast (cached on session).
+    persists to session, then returns. Query param force=1 re-runs root cause for all points (e.g. to fix truncated text).
     """
-    friction_points, generated = await ensure_root_cause_for_session(session_id)
+    force = request.query_params.get("force", "").lower() in ("1", "true", "yes")
+    friction_points, generated = await ensure_root_cause_for_session(session_id, force=force)
     return {"frictionPoints": friction_points, "generated": generated}
 
 
@@ -113,6 +116,68 @@ async def list_clusters(request: Request) -> dict[str, Any]:
         if hasattr(c.get("createdAt"), "isoformat"):
             c["createdAt"] = c["createdAt"].isoformat()
     return {"success": True, "clusters": clusters}
+
+
+@app.post("/insights/generate")
+async def insights_generate(request: Request, response: Response) -> dict[str, Any]:
+    """
+    Generate insights for a project: group sessions by friction pattern, run impact estimation,
+    upsert into quicklook_insights. Query params: projectKey (required), limit=500, period_days=7.
+    """
+    project_key = request.query_params.get("projectKey", "").strip()
+    if not project_key:
+        response.status_code = 400
+        return {"success": False, "error": "projectKey is required"}
+    try:
+        limit_val = request.query_params.get("limit", "500")
+        limit = min(1000, max(1, int(limit_val)))
+    except ValueError:
+        limit = 500
+    try:
+        period_val = request.query_params.get("period_days", "7")
+        period_days = min(90, max(1, int(period_val)))
+    except ValueError:
+        period_days = 7
+    try:
+        result = await run_insight_generation_for_project(
+            get_database,
+            project_key,
+            limit_sessions=limit,
+            period_days=period_days,
+        )
+        return {"success": True, **result}
+    except Exception as e:
+        logger.exception("POST /insights/generate failed: %s", e)
+        response.status_code = 500
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/patterns/sync")
+async def patterns_sync(request: Request, response: Response) -> dict[str, Any]:
+    """
+    Sync quicklook_patterns from existing quicklook_insights for a project.
+    Query params: projectKey (required), limit=200.
+    """
+    project_key = request.query_params.get("projectKey", "").strip()
+    if not project_key:
+        response.status_code = 400
+        return {"success": False, "error": "projectKey is required"}
+    try:
+        limit_val = request.query_params.get("limit", "200")
+        limit_insights = min(500, max(1, int(limit_val)))
+    except ValueError:
+        limit_insights = 200
+    try:
+        result = await sync_patterns_from_insights(
+            get_database,
+            project_key,
+            limit_insights=limit_insights,
+        )
+        return {"success": True, **result}
+    except Exception as e:
+        logger.exception("POST /patterns/sync failed: %s", e)
+        response.status_code = 500
+        return {"success": False, "error": str(e)}
 
 
 def _decode_pubsub_body(body: bytes) -> dict[str, Any]:

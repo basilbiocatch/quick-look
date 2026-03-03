@@ -40,6 +40,13 @@ export const getEnsureSummary = (sessionId) => api.get(`/sessions/${sessionId}/e
 /** On-demand root cause for friction points (analytics). Returns { frictionPoints, generated }. */
 export const getEnsureRootCause = (sessionId) => api.get(`/sessions/${sessionId}/ensure-root-cause`);
 
+export const getInsights = (projectKey, params) =>
+  api.get("/insights", { params: { projectKey, ...params } });
+export const getInsight = (insightId) => api.get(`/insights/${insightId}`);
+export const patchInsight = (insightId, body) => api.patch(`/insights/${insightId}`, body);
+export const postInsightsGenerate = (projectKey) =>
+  api.post("/insights/generate", { projectKey }, { params: { projectKey } });
+
 export const getProjects = () => api.get("/projects");
 export const createProject = (body) => api.post("/projects", body);
 export const getProject = (projectKey) => api.get(`/projects/${projectKey}`);

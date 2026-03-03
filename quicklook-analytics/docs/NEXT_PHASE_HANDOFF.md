@@ -1,4 +1,33 @@
-# Next Phase Handoff: Phase 3 (Session Summaries & Clustering)
+# Next Phase Handoff: Phase 5 (A/B Test Suggestions & Pattern Library)
+
+---
+
+## Phase 5 implementation status (done)
+
+- **pattern_library.py** – Pattern storage and matching: `find_matching_patterns()`, `upsert_pattern_from_insight()`, `sync_patterns_from_insights()`. Patterns keyed by (projectKey, frictionType, page); signature includes frictionType, page, element.
+- **quicklook_patterns** – Collection used by analytics; schema: patternId, projectKey, name, signature, occurrences, affectedConversionRate, normalConversionRate, suggestedFixes (array of { description, expectedLift: { min, max }, confidence, priority, source }), abTestResults, updatedAt. Server model (quicklookPatternModel.js) has projectKey and suggestedFixes as Mixed.
+- **lift_predictor.py** – Rule-based lift prediction from impact `estimated_lift_if_fixed` and/or pattern fix expectedLift; optional sklearn `GradientBoostingRegressor` when training data (abTestResults) available. `predict_lift_rule_based()`, `LiftPredictor` with `predict()`, `train()`, `load()`.
+- **ab_suggester.py** – `suggest_fixes_for_insight()`: matches friction to patterns, collects suggested fixes, predicts lift per fix via lift_predictor; optional `use_llm_novel=True` for Gemini-generated suggestions. Returns list of { description, predictedLift: { min, max }, confidence, priority, source }.
+- **insight_generator.py** – Calls `suggest_fixes_for_insight()` per insight and sets `suggestedFixes` on new and updated insights (use_llm_novel=False by default).
+- **POST /patterns/sync** (analytics) – Syncs quicklook_patterns from existing quicklook_insights (projectKey, limit=200).
+- **Frontend** – InsightsPage detail panel shows “Suggested fixes (A/B ideas)” with cards: description, predicted lift range, confidence, priority chip.
+
+---
+
+## Phase 4 implementation status (done)
+
+- **impact_estimator.py** – Conversion impact (affected vs unaffected), chi-squared test, Wilson confidence interval, estimated_lift_if_fixed. Min sample size guard (5 affected, 5 unaffected).
+- **insight_generator.py** – Groups sessions by (frictionType, page), runs impact estimation, upserts to `quicklook_insights`. No Gemini; uses session friction/root_cause data. `run_insight_generation_for_project(get_db, project_key, limit_sessions=500, period_days=7)`.
+- **POST /insights/generate** (analytics) – Query: projectKey (required), limit=500, period_days=7.
+- **quicklook_insights** – Schema aligned in server (impact, suggestedFixes as Mixed; status enum; index projectKey+status+createdAt).
+- **API** – GET /api/quicklook/insights?projectKey=...&status=...&limit=50, GET /api/quicklook/insights/:insightId, PATCH /api/quicklook/insights/:insightId (status, notes), POST /api/quicklook/insights/generate (proxy to analytics when QUICKLOOK_ANALYTICS_URL set).
+- **InsightsPage.jsx** – Main AI dashboard: summary cards (critical count, affected sessions, total insights), filter by status, list of insight cards, detail panel (root cause, Mark resolved / Ignore, View sessions), Generate insights button.
+
+**Note:** Session `converted` is used for impact; can be set from goals/URL in a follow-up (not implemented in Phase 4).
+
+---
+
+## Previous: Phase 3 (Session Summaries & Clustering)
 
 **Plan reference:** [ai_ux_analytics_system_30811035.plan.md](file:///Users/basil.farraj/.cursor/plans/ai_ux_analytics_system_30811035.plan.md)
 
@@ -172,13 +201,14 @@ Read plan Phase 3, Feature 6, Feature 1, Section 3, Section 4, Section 10, and t
 
 ---
 
-## After Phase 3: Phase 4
+## After Phase 5: Phase 6
 
-Phase 4 (Impact Estimation & Insights) will add:
+Phase 6 (Automated Reports) will add:
 
-- `impact_estimator.py` (conversion impact, statistical significance).  
-- Insight generation pipeline and `quicklook_insights` collection.  
-- InsightsPage.jsx and `/api/insights`.  
-- Sessions need a `converted` (and optionally conversion goals) for impact; that can be added in Phase 4.
+- `report_generator.py` – Daily/weekly UX reports with Gemini narratives.
+- `anomaly_detector.py` – Time-series anomaly detection and alerts.
+- Email delivery (optional), report viewer in dashboard.
+- Frontend: ReportsPage.jsx.
+- API routes: `/api/reports`.
 
-Use this handoff and the plan file so the next agent can continue with Phase 3 without redoing Phase 2.
+Use the main plan file (Section 9 → Phase 6) and this handoff for the next agent.

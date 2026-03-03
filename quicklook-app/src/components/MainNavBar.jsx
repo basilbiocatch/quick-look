@@ -11,6 +11,7 @@ import {
 } from "@mui/material";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import VideocamIcon from "@mui/icons-material/Videocam";
+import LightbulbIcon from "@mui/icons-material/Lightbulb";
 import SettingsIcon from "@mui/icons-material/Settings";
 import FolderIcon from "@mui/icons-material/Folder";
 import AddIcon from "@mui/icons-material/Add";
@@ -66,6 +67,7 @@ export default function MainNavBar() {
 
   const pathname = location.pathname || "";
   const isSessionsActive = Boolean(routeProjectKey && pathname.endsWith("/sessions"));
+  const isInsightsActive = Boolean(routeProjectKey && pathname.includes("/insights"));
   const isSettingsActive = pathname.includes("/settings");
 
   return (
@@ -84,8 +86,32 @@ export default function MainNavBar() {
       }}
     >
       {/* Logo */}
-      <Box sx={{ display: "flex", justifyContent: "center", mb: 2, pt: 1 }}>
-        <img src={getPublicAssetUrl("logo.png")} alt="Quicklook" style={{ height: 32, width: 32, display: "block" }} />
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "center",
+          mb: 3,
+          pb: 1,
+          pt: 1,
+          "@keyframes logoFloat": {
+            "0%, 100%": { transform: "translate(0, 0)" },
+            "12%": { transform: "translate(1px, -1px)" },
+            "25%": { transform: "translate(-1px, 1px)" },
+            "37%": { transform: "translate(2px, 0)" },
+            "50%": { transform: "translate(0, -2px)" },
+            "62%": { transform: "translate(-2px, 1px)" },
+            "75%": { transform: "translate(1px, 1px)" },
+            "87%": { transform: "translate(-1px, -1px)" },
+          },
+          "& img": {
+            height: 32,
+            width: 32,
+            display: "block",
+            animation: "logoFloat 8s ease-in-out infinite",
+          },
+        }}
+      >
+        <img src={getPublicAssetUrl("logo.png")} alt="Quicklook" />
       </Box>
 
       {/* Home */}
@@ -168,7 +194,33 @@ export default function MainNavBar() {
         </Tooltip>
       </Box>
 
-      {/* Project selector */}
+      {/* Insights */}
+      <Box sx={{ display: "flex", justifyContent: "center", py: 0.5 }}>
+        <Tooltip title="Insights" placement="right">
+          <IconButton
+            onClick={(e) => {
+              if (projectKey) navigate(`/projects/${projectKey}/insights`);
+              else setProjectMenuAnchor(e.currentTarget);
+            }}
+            sx={{
+              ...iconButtonSx,
+              ...(isInsightsActive && {
+                color: "#fff",
+                bgcolor: "rgba(255,255,255,0.18)",
+                "&:hover": { bgcolor: "rgba(255,255,255,0.22)" },
+              }),
+              "& .MuiSvgIcon-root": { fontSize: 24 },
+            }}
+          >
+            <LightbulbIcon />
+          </IconButton>
+        </Tooltip>
+      </Box>
+
+      {/* Spacer to push bottom items down */}
+      <Box sx={{ flex: 1, minHeight: 8 }} />
+
+      {/* Select project - at bottom */}
       <Box sx={{ display: "flex", justifyContent: "center", py: 0.5 }}>
         <Tooltip title="Select project" placement="right">
           <IconButton
@@ -186,9 +238,6 @@ export default function MainNavBar() {
           </IconButton>
         </Tooltip>
       </Box>
-
-      {/* Spacer to push settings to bottom */}
-      <Box sx={{ flex: 1, minHeight: 8 }} />
 
       {/* Current Project Settings - at bottom */}
       <Box sx={{ display: "flex", justifyContent: "center", py: 0.5 }}>
