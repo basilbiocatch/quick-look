@@ -59,7 +59,7 @@ async function main() {
   console.log("API Key:       ", project.apiKey);
   console.log("\n--- How to use ---\n");
   console.log("1. SDK (on your site / localinteractive):");
-  console.log(`   window.quicklook('init', '${project.projectKey}', { apiUrl: 'http://localhost:3080' });`);
+  console.log(`   window.quicklook('init', '${project.projectKey}', { apiUrl: 'https://localhost:3080' });`);
   console.log("\n2. Dashboard (quicklook-app):");
   console.log("   - Enter project key:", project.projectKey);
   console.log("   - Optional: set in .env for read auth:");

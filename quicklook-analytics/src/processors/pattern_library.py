@@ -8,10 +8,13 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from src.utils.db_retry import with_retry
+
 logger = logging.getLogger(__name__)
 
 PATTERNS_COLLECTION = "quicklook_patterns"
 INSIGHTS_COLLECTION = "quicklook_insights"
+AB_TESTS_COLLECTION = "quicklook_ab_tests"
 
 
 def _pattern_id(project_key: str, friction_type: str, page: str) -> str:
@@ -123,19 +126,21 @@ async def upsert_pattern_from_insight(
             if d and d not in seen_desc:
                 existing_fixes.append(f)
                 seen_desc.add(d)
-        await coll.update_one(
-            {"patternId": pattern_id},
-            {
-                "$set": {
-                    "name": existing.get("name") or f"{friction_type} on {page[:80]}",
-                    "signature": signature,
-                    "suggestedFixes": existing_fixes[:20],
-                    "occurrences": (existing.get("occurrences") or 0) + occurrence_count,
-                    "affectedConversionRate": affected_conversion_rate if affected_conversion_rate is not None else existing.get("affectedConversionRate"),
-                    "normalConversionRate": normal_conversion_rate if normal_conversion_rate is not None else existing.get("normalConversionRate"),
-                    "updatedAt": now,
-                }
-            },
+        await with_retry(
+            lambda: coll.update_one(
+                {"patternId": pattern_id},
+                {
+                    "$set": {
+                        "name": existing.get("name") or f"{friction_type} on {page[:80]}",
+                        "signature": signature,
+                        "suggestedFixes": existing_fixes[:20],
+                        "occurrences": (existing.get("occurrences") or 0) + occurrence_count,
+                        "affectedConversionRate": affected_conversion_rate if affected_conversion_rate is not None else existing.get("affectedConversionRate"),
+                        "normalConversionRate": normal_conversion_rate if normal_conversion_rate is not None else existing.get("normalConversionRate"),
+                        "updatedAt": now,
+                    }
+                },
+            )
         )
         return pattern_id
 
@@ -151,7 +156,7 @@ async def upsert_pattern_from_insight(
         "abTestResults": [],
         "updatedAt": now,
     }
-    await coll.insert_one(doc)
+    await with_retry(lambda: coll.insert_one(doc))
     return pattern_id
 
 
@@ -197,3 +202,92 @@ async def sync_patterns_from_insights(
         )
         upserted += 1
     return {"upserted": upserted, "skipped": skipped}
+
+
+async def append_ab_result_from_insight(db, insight_id: str) -> dict[str, Any]:
+    """
+    When an insight is marked resolved with actualLift, append an outcome to the matching pattern's
+    abTestResults so the lift predictor can use it. Returns { updated: bool, patternId?: str }.
+    """
+    coll_ins = db[INSIGHTS_COLLECTION]
+    coll_pat = db[PATTERNS_COLLECTION]
+    insight = await coll_ins.find_one({"insightId": insight_id})
+    if not insight or insight.get("status") != "resolved":
+        return {"updated": False}
+    actual_lift = insight.get("actualLift")
+    if actual_lift is None:
+        return {"updated": False}
+    project_key = insight.get("projectKey")
+    friction_type = insight.get("frictionType") or "unknown"
+    page = insight.get("page") or "unknown"
+    pattern_id = _pattern_id(project_key, friction_type, page)
+    result_entry = {
+        "source": "insight_resolution",
+        "insightId": insight_id,
+        "actualLift": float(actual_lift),
+        "updatedAt": datetime.now(timezone.utc),
+    }
+    res = await with_retry(
+        lambda: coll_pat.update_one(
+            {"patternId": pattern_id},
+            {"$push": {"abTestResults": {"$each": [result_entry], "$slice": -50}}}
+        )
+    )
+    if res.modified_count:
+        await with_retry(
+            lambda: coll_pat.update_one(
+                {"patternId": pattern_id},
+                {"$set": {"updatedAt": datetime.now(timezone.utc)}}
+            )
+        )
+    return {"updated": res.modified_count > 0, "patternId": pattern_id}
+
+
+async def append_ab_result_from_ab_test(db, test_id: str) -> dict[str, Any]:
+    """
+    When an A/B test is completed with results.actualLift, append to the matching pattern's
+    abTestResults. Pattern is resolved via test's insightId -> insight (frictionType, page).
+    Returns { updated: bool, patternId?: str }.
+    """
+    coll_ab = db[AB_TESTS_COLLECTION]
+    coll_ins = db[INSIGHTS_COLLECTION]
+    coll_pat = db[PATTERNS_COLLECTION]
+    test = await coll_ab.find_one({"testId": test_id})
+    if not test or test.get("status") != "completed":
+        return {"updated": False}
+    results = test.get("results") or {}
+    actual_lift = results.get("actualLift")
+    if actual_lift is None:
+        return {"updated": False}
+    project_key = test.get("projectKey")
+    insight_id = test.get("insightId")
+    friction_type = "unknown"
+    page = "unknown"
+    if insight_id:
+        insight = await coll_ins.find_one({"insightId": insight_id})
+        if insight:
+            friction_type = insight.get("frictionType") or "unknown"
+            page = insight.get("page") or "unknown"
+    pattern_id = _pattern_id(project_key, friction_type, page)
+    result_entry = {
+        "testId": test_id,
+        "changeDescription": test.get("changeDescription"),
+        "actualLift": float(actual_lift),
+        "sampleSize": results.get("sampleSize"),
+        "pValue": results.get("pValue"),
+        "updatedAt": datetime.now(timezone.utc),
+    }
+    res = await with_retry(
+        lambda: coll_pat.update_one(
+            {"patternId": pattern_id},
+            {"$push": {"abTestResults": {"$each": [result_entry], "$slice": -50}}}
+        )
+    )
+    if res.modified_count:
+        await with_retry(
+            lambda: coll_pat.update_one(
+                {"patternId": pattern_id},
+                {"$set": {"updatedAt": datetime.now(timezone.utc)}}
+            )
+        )
+    return {"updated": res.modified_count > 0, "patternId": pattern_id}

@@ -11,7 +11,12 @@ from fastapi import FastAPI, Request, Response
 from src.db.connection import get_database
 from src.processors.behavior_clusterer import run_clustering_for_project
 from src.processors.insight_generator import run_insight_generation_for_project
-from src.processors.pattern_library import sync_patterns_from_insights
+from src.processors.pattern_library import (
+    sync_patterns_from_insights,
+    append_ab_result_from_insight,
+    append_ab_result_from_ab_test,
+)
+from src.processors.retrain import run_retrain
 from src.reports.report_generator import generate_report
 from src.processors.session_processor import (
     ensure_root_cause_for_session,
@@ -149,6 +154,61 @@ async def insights_generate(request: Request, response: Response) -> dict[str, A
         return {"success": True, **result}
     except Exception as e:
         logger.exception("POST /insights/generate failed: %s", e)
+        response.status_code = 500
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/models/retrain")
+async def models_retrain(request: Request, response: Response) -> dict[str, Any]:
+    """
+    Retrain the lift predictor from resolved insights (with actualLift) and completed A/B tests.
+    Query params: projectKey (optional) to limit to one project.
+    No Gemini; cost-effective. Returns { success, trained, trainingRows, message }.
+    """
+    project_key = request.query_params.get("projectKey", "").strip() or None
+    try:
+        result = await run_retrain(get_database, project_key=project_key)
+        return result
+    except Exception as e:
+        logger.exception("POST /models/retrain failed: %s", e)
+        response.status_code = 500
+        return {"success": False, "error": str(e), "trained": False, "trainingRows": 0}
+
+
+@app.post("/patterns/update-from-insight")
+async def patterns_update_from_insight(request: Request, response: Response) -> dict[str, Any]:
+    """
+    After an insight is marked resolved with actualLift, call this to append the outcome to the
+    matching pattern's abTestResults. Query params: insightId (required).
+    """
+    insight_id = request.query_params.get("insightId", "").strip()
+    if not insight_id:
+        response.status_code = 400
+        return {"success": False, "error": "insightId is required"}
+    try:
+        result = await append_ab_result_from_insight(get_database(), insight_id)
+        return {"success": True, **result}
+    except Exception as e:
+        logger.exception("POST /patterns/update-from-insight failed: %s", e)
+        response.status_code = 500
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/patterns/update-from-ab-test")
+async def patterns_update_from_ab_test(request: Request, response: Response) -> dict[str, Any]:
+    """
+    After an A/B test is completed with results, call this to append to the matching pattern's
+    abTestResults. Query params: testId (required).
+    """
+    test_id = request.query_params.get("testId", "").strip()
+    if not test_id:
+        response.status_code = 400
+        return {"success": False, "error": "testId is required"}
+    try:
+        result = await append_ab_result_from_ab_test(get_database(), test_id)
+        return {"success": True, **result}
+    except Exception as e:
+        logger.exception("POST /patterns/update-from-ab-test failed: %s", e)
         response.status_code = 500
         return {"success": False, "error": str(e)}
 

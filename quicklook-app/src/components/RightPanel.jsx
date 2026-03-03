@@ -12,6 +12,8 @@ import {
   ListItemText,
   Button,
   Tooltip,
+  Tabs,
+  Tab,
   ToggleButtonGroup,
   ToggleButton,
   Dialog,
@@ -42,6 +44,7 @@ import PhoneAndroidIcon from "@mui/icons-material/PhoneAndroid";
 import TabletIcon from "@mui/icons-material/Tablet";
 import LaptopIcon from "@mui/icons-material/Laptop";
 import LanguageIcon from "@mui/icons-material/Language";
+import RouterIcon from "@mui/icons-material/Router";
 import { useNavigate } from "react-router-dom";
 import { parseDevice, parseOS, parseBrowser, formatDuration } from "../utils/sessionParser";
 import { buildActivityList, getPagesFromEvents, urlPageKey } from "../utils/activityList";
@@ -151,8 +154,11 @@ export default function RightPanel({
   aiSummary = null,
   summaryLoading = false,
   summaryError = "",
+  relatedSessionsByIp = [],
+  relatedSessionsByDevice = [],
 }) {
   const navigate = useNavigate();
+  const [relatedTab, setRelatedTab] = useState(0);
   const [activitySearch, setActivitySearch] = useState("");
   const [setupDialogOpen, setSetupDialogOpen] = useState(false);
   const [setupIntegrationMode, setSetupIntegrationMode] = useState("developer");
@@ -279,6 +285,105 @@ ${setupSnippet}`
           Show all sessions
         </Typography>
       </CollapsibleSection>
+
+      <CollapsibleSection
+        title="Related sessions"
+        defaultOpen={true}
+        action={
+          <Tooltip title="Other sessions from the same device or IP in this project">
+            <RouterIcon sx={{ fontSize: 18, color: "text.secondary" }} />
+          </Tooltip>
+        }
+      >
+        <Tabs
+          value={relatedTab}
+          onChange={(_, v) => setRelatedTab(v)}
+          variant="fullWidth"
+          sx={{ minHeight: 36, mb: 1, "& .MuiTab-root": { minHeight: 36, py: 0.5, fontSize: "0.75rem" } }}
+        >
+          <Tab label={`By Device (${(relatedSessionsByDevice ?? []).filter((s) => s.sessionId !== session.sessionId).length})`} />
+          <Tab label={`By IP (${(relatedSessionsByIp ?? []).filter((s) => s.sessionId !== session.sessionId).length})`} />
+        </Tabs>
+          {relatedTab === 0 && (
+            <Box>
+              {session.deviceId ? (
+                <>
+                  <List dense disablePadding sx={{ maxHeight: 200, overflow: "auto" }}>
+                    {(relatedSessionsByDevice ?? [])
+                      .filter((s) => s.sessionId !== session.sessionId)
+                      .slice(0, 20)
+                      .map((s) => (
+                        <ListItem key={s.sessionId} disablePadding>
+                          <ListItemButton
+                            onClick={() => navigate(`/projects/${session.projectKey}/sessions/${s.sessionId}`)}
+                            sx={{ py: 0.25, borderRadius: 1 }}
+                          >
+                            <ListItemText
+                              primary={s.sessionId?.slice(0, 8) + "…"}
+                              secondary={
+                                s.createdAt
+                                  ? format(new Date(s.createdAt), "MMM d, h:mm a") +
+                                    (s.duration != null ? ` · ${formatDuration(s.duration)}` : "")
+                                  : ""
+                              }
+                              primaryTypographyProps={{ variant: "caption", fontFamily: "monospace" }}
+                              secondaryTypographyProps={{ variant: "caption" }}
+                            />
+                          </ListItemButton>
+                        </ListItem>
+                      ))}
+                  </List>
+                  {(relatedSessionsByDevice ?? []).filter((s) => s.sessionId !== session.sessionId).length > 20 && (
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
+                      + more. Use filters on sessions page to see all.
+                    </Typography>
+                  )}
+                </>
+              ) : (
+                <Typography variant="caption" color="text.secondary">
+                  No device ID for this session.
+                </Typography>
+              )}
+            </Box>
+          )}
+          {relatedTab === 1 && (
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+                {(relatedSessionsByIp ?? []).filter((s) => s.sessionId !== session.sessionId).length} other session(s) from this IP
+              </Typography>
+              <List dense disablePadding sx={{ maxHeight: 200, overflow: "auto" }}>
+                {(relatedSessionsByIp ?? [])
+                  .filter((s) => s.sessionId !== session.sessionId)
+                  .slice(0, 20)
+                  .map((s) => (
+                    <ListItem key={s.sessionId} disablePadding>
+                      <ListItemButton
+                        onClick={() => navigate(`/projects/${session.projectKey}/sessions/${s.sessionId}`)}
+                        sx={{ py: 0.25, borderRadius: 1 }}
+                      >
+                        <ListItemText
+                          primary={s.sessionId?.slice(0, 8) + "…"}
+                          secondary={
+                            s.createdAt
+                              ? format(new Date(s.createdAt), "MMM d, h:mm a") +
+                                (s.duration != null ? ` · ${formatDuration(s.duration)}` : "")
+                              : ""
+                          }
+                          primaryTypographyProps={{ variant: "caption", fontFamily: "monospace" }}
+                          secondaryTypographyProps={{ variant: "caption" }}
+                        />
+                      </ListItemButton>
+                    </ListItem>
+                  ))}
+              </List>
+              {(relatedSessionsByIp ?? []).filter((s) => s.sessionId !== session.sessionId).length > 20 && (
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
+                  + more. Use filters on sessions page to see all.
+                </Typography>
+              )}
+            </Box>
+          )}
+        </CollapsibleSection>
 
       <CollapsibleSection
         title="AI Summary"

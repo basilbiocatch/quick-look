@@ -60,11 +60,11 @@ export const getInsightById = async (req, res) => {
   }
 };
 
-/** PATCH /insights/:insightId - body: { status?, notes? } */
+/** PATCH /insights/:insightId - body: { status?, notes?, accuracyRating?, actualLift? } */
 export const patchInsight = async (req, res) => {
   try {
     const { insightId } = req.params;
-    const { status, notes } = req.body || {};
+    const { status, notes, accuracyRating, actualLift } = req.body || {};
     const insight = await QuicklookInsight.findOne({ insightId });
     if (!insight) {
       return res.status(404).json({ success: false, error: "Insight not found" });
@@ -74,15 +74,33 @@ export const patchInsight = async (req, res) => {
     const update = { updatedAt: new Date() };
     if (status && ["active", "resolved", "ignored"].includes(status)) {
       update.status = status;
+      if (status === "resolved") {
+        update.resolvedAt = new Date();
+      }
     }
     if (notes !== undefined) {
       update.notes = notes;
+    }
+    if (accuracyRating !== undefined && accuracyRating !== null) {
+      const r = Number(accuracyRating);
+      if (r >= 1 && r <= 5) update.accuracyRating = r;
+    }
+    if (actualLift !== undefined && actualLift !== null && !Number.isNaN(Number(actualLift))) {
+      update.actualLift = Number(actualLift);
     }
     const updated = await QuicklookInsight.findOneAndUpdate(
       { insightId },
       { $set: update },
       { new: true }
     ).lean();
+    // Phase 7: notify analytics to update pattern library when resolved with actualLift
+    const base = process.env.QUICKLOOK_ANALYTICS_URL || process.env.ANALYTICS_BASE_URL || "";
+    if (base && updated.status === "resolved" && updated.actualLift != null) {
+      fetch(
+        `${base.replace(/\/$/, "")}/patterns/update-from-insight?insightId=${encodeURIComponent(insightId)}`,
+        { method: "POST" }
+      ).catch((e) => logger.warn("analytics update-from-insight failed", { error: e.message }));
+    }
     return res.json({ success: true, data: updated });
   } catch (err) {
     logger.error("quicklook patchInsight", { error: err.message });

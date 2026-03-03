@@ -53,7 +53,11 @@ def _download_and_parse_chunk_sync(blob_name: str, index: int) -> tuple[int, lis
     if bucket is None:
         return (index, None)
     try:
-        raw = bucket.blob(blob_name).download_as_bytes()
+        # raw_download=True avoids HTTP-level gzip decoding, which can fail with
+        # "_GzipDecoder.decompress() got an unexpected keyword argument 'max_length'"
+        # when urllib3 and Python 3.13+ mix (e.g. pip-vendored vs installed urllib3).
+        # We decompress the blob ourselves below with gzip.decompress().
+        raw = bucket.blob(blob_name).download_as_bytes(raw_download=True)
     except Exception as e:
         logger.warning("GCS download failed for %s: %s", blob_name, e)
         return (index, None)
@@ -72,17 +76,51 @@ def _download_and_parse_chunk_sync(blob_name: str, index: int) -> tuple[int, lis
     return (index, events) if isinstance(events, list) else (index, None)
 
 
+# Timeout for GCS list_blobs to avoid 120s+ hangs on connection issues
+GCS_LIST_BLOBS_TIMEOUT = 60.0
+
+
+def _list_blobs_sync(bucket, prefix: str) -> list:
+    """Sync list_blobs for use in to_thread (avoids long-running default timeouts)."""
+    return list(bucket.list_blobs(prefix=prefix))
+
+
 async def _get_events_from_gcs(session_id: str) -> list[dict[str, Any]]:
     """List blobs, then download and parse chunks in parallel (much faster than sequential)."""
     bucket = _get_gcs_bucket()
     if bucket is None:
         return []
     prefix = f"{session_id}/"
-    try:
-        blobs = await asyncio.to_thread(lambda: list(bucket.list_blobs(prefix=prefix)))
-    except Exception as e:
-        logger.warning("GCS list_blobs failed for session %s: %s", session_id[:8], e)
-        return []
+    blobs = []
+    for attempt in range(2):
+        try:
+            blobs = await asyncio.wait_for(
+                asyncio.to_thread(_list_blobs_sync, bucket, prefix),
+                timeout=GCS_LIST_BLOBS_TIMEOUT,
+            )
+            break
+        except asyncio.TimeoutError as e:
+            logger.warning(
+                "GCS list_blobs timeout for session %s (attempt %d): %s",
+                session_id[:8],
+                attempt + 1,
+                e,
+            )
+            if attempt == 1:
+                return []
+        except (ConnectionError, OSError) as e:
+            logger.warning(
+                "GCS list_blobs connection error for session %s (attempt %d): %s",
+                session_id[:8],
+                attempt + 1,
+                e,
+            )
+            if attempt == 1:
+                return []
+            await asyncio.sleep(1.0)
+        except Exception as e:
+            logger.warning("GCS list_blobs failed for session %s: %s", session_id[:8], e)
+            return []
     # Build (index, blob_name) for each chunk
     chunk_specs: list[tuple[int, str]] = []
     for blob in blobs:

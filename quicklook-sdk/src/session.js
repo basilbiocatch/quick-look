@@ -1,3 +1,5 @@
+import { getDeviceId } from "./collectors/deviceId.js";
+
 const STORAGE_KEY = "quicklook_sid";
 const STORAGE_CHAIN_KEY = "quicklook_chain_id";
 const STORAGE_START_TIME_KEY = "quicklook_start_time";
@@ -18,6 +20,8 @@ let maxSessionDuration = 60 * 60 * 1000; // 60 minutes default
 let sessionChainId = null;
 let parentSessionId = null;
 let sequenceNumber = 1;
+/** When true, project has QL Device ID enabled; SDK will include deviceId in session start. */
+let deviceIdEnabled = false;
 
 /** Single in-flight start promise so duplicate init() calls don't create two sessions */
 let startPromise = null;
@@ -81,6 +85,8 @@ function clearSessionStorage() {
   } catch (_) {}
 }
 
+export { getDeviceId };
+
 export function getSessionId() {
   return sessionId;
 }
@@ -107,6 +113,7 @@ export function setConfig(config) {
   if (config.maxSessionDuration !== undefined) {
     maxSessionDuration = config.maxSessionDuration;
   }
+  if (typeof config.deviceIdEnabled === "boolean") deviceIdEnabled = config.deviceIdEnabled;
 }
 
 export function getSessionStartTime() {
@@ -158,6 +165,10 @@ export async function startSession(rotationOptions = null) {
         user: user || {},
         retentionDays,
       };
+      if (deviceIdEnabled) {
+        const deviceId = getDeviceId();
+        if (deviceId) payload.deviceId = deviceId;
+      }
       if (attributes != null && typeof attributes === "object" && !Array.isArray(attributes)) {
         payload.attributes = attributes;
       }

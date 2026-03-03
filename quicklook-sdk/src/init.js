@@ -1,4 +1,5 @@
 import { captureDeviceMeta } from "./collectors/device.js";
+import { getOrCreateDeviceId, getDeviceId } from "./collectors/deviceId.js";
 import { setIdentity, getIdentity } from "./collectors/identity.js";
 import { patchConsole } from "./collectors/console.js";
 import { patchNetwork } from "./collectors/network.js";
@@ -8,7 +9,7 @@ import { pushEvent, setWorker, setWorkerUrl, startScheduler, flushAndEnd, flush,
 import { startRecording, stopRecording, ensureSessionStarted } from "./record.js";
 import { setActivityConfig, setActivityCallbacks, startActivityMonitoring, stopActivityMonitoring } from "./activity.js";
 
-const DEFAULT_API_URL = "http://localhost:3080";
+const DEFAULT_API_URL = "https://localhost:3080";
 
 const KNOWN_OPTIONS = new Set(["apiUrl", "retentionDays", "captureStorage", "workerUrl", "excludedUrls", "includedUrls", "inactivityTimeout", "pauseOnHidden", "maxSessionDuration"]);
 
@@ -82,7 +83,7 @@ function init(projectKey, options = {}) {
     includedUrls: options.includedUrls,
     maxSessionDuration: options.maxSessionDuration !== undefined ? options.maxSessionDuration : 60 * 60 * 1000,
   });
-  
+
   setActivityConfig({
     inactivityTimeout: options.inactivityTimeout !== undefined ? options.inactivityTimeout : 5 * 60 * 1000,
     pauseOnHidden: options.pauseOnHidden !== undefined ? options.pauseOnHidden : true,
@@ -148,12 +149,18 @@ function init(projectKey, options = {}) {
   }
 
   (async () => {
-    if (options.excludedUrls === undefined && typeof fetch !== "undefined") {
+    if (typeof fetch !== "undefined") {
       try {
         const r = await fetch(`${apiUrlNorm}/api/quicklook/projects/${encodeURIComponent(projectKey)}/config`);
         const d = await r.json();
-        if (d && d.success && Array.isArray(d.excludedUrls)) {
-          setConfig({ excludedUrls: d.excludedUrls });
+        if (d && d.success) {
+          const configUpdate = {};
+          if (Array.isArray(d.excludedUrls)) configUpdate.excludedUrls = d.excludedUrls;
+          if (typeof d.deviceIdEnabled === "boolean") configUpdate.deviceIdEnabled = d.deviceIdEnabled;
+          if (Object.keys(configUpdate).length) setConfig(configUpdate);
+          if (configUpdate.deviceIdEnabled) {
+            getOrCreateDeviceId(apiUrlNorm);
+          }
         }
       } catch (_) {}
     }

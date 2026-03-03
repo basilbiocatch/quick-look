@@ -26,7 +26,7 @@ async function getProjectForUser(projectKey, userId, res) {
 export const startSession = async (req, res) => {
   try {
     const ipAddress = getRealClientIP(req);
-    const { projectKey, meta, user, attributes, parentSessionId, sessionChainId, sequenceNumber, splitReason } = req.body || {};
+    const { projectKey, meta, user, attributes, parentSessionId, sessionChainId, sequenceNumber, splitReason, deviceId, deviceFingerprint } = req.body || {};
     if (!projectKey || typeof projectKey !== "string") {
       return res.status(200).json({ success: false, error: "projectKey required" });
     }
@@ -43,6 +43,8 @@ export const startSession = async (req, res) => {
       sessionChainId,
       sequenceNumber,
       splitReason,
+      deviceId: deviceId || undefined,
+      deviceFingerprint: deviceFingerprint || undefined,
     });
     return res.status(200).json({ success: true, ...result });
   } catch (err) {
@@ -86,7 +88,7 @@ export const endSession = async (req, res) => {
 
 export const getSessions = async (req, res) => {
   try {
-    const { projectKey, status, from, to, limit, skip } = req.query;
+    const { projectKey, status, from, to, limit, skip, ipAddress, deviceId } = req.query;
     if (!projectKey) {
       return res.status(400).json({ success: false, error: "projectKey is required" });
     }
@@ -99,6 +101,8 @@ export const getSessions = async (req, res) => {
       to,
       limit: limit ? parseInt(limit, 10) : 50,
       skip: skip ? parseInt(skip, 10) : 0,
+      ipAddress: ipAddress || undefined,
+      deviceId: deviceId || undefined,
     });
     return res.json(result);
   } catch (err) {
@@ -160,13 +164,14 @@ export const getProjectConfig = async (req, res) => {
     if (!projectKey) {
       return res.status(400).json({ success: false, error: "projectKey required" });
     }
-    const project = await QuicklookProject.findOne({ projectKey }).select("excludedUrls").lean();
+    const project = await QuicklookProject.findOne({ projectKey }).select("excludedUrls deviceIdEnabled").lean();
     if (!project) {
       return res.status(404).json({ success: false, error: "Project not found" });
     }
     return res.json({
       success: true,
       excludedUrls: Array.isArray(project.excludedUrls) ? project.excludedUrls : [],
+      deviceIdEnabled: Boolean(project.deviceIdEnabled),
     });
   } catch (err) {
     logger.error("quicklook getProjectConfig", { error: err.message });
@@ -189,6 +194,7 @@ export const getProject = async (req, res) => {
         allowedDomains: project.allowedDomains || [],
         excludedUrls: project.excludedUrls || [],
         retentionDays: project.retentionDays,
+        deviceIdEnabled: Boolean(project.deviceIdEnabled),
         createdAt: project.createdAt,
         updatedAt: project.updatedAt,
       },
@@ -205,7 +211,7 @@ export const updateProject = async (req, res) => {
     const { projectKey } = req.params;
     const project = await getProjectForUser(projectKey, req.user.userId, res);
     if (!project) return;
-    const { name, allowedDomains, excludedUrls } = req.body || {};
+    const { name, allowedDomains, excludedUrls, deviceIdEnabled } = req.body || {};
     const update = { updatedAt: new Date() };
     if (typeof name === "string" && name.trim()) update.name = name.trim();
     if (Array.isArray(allowedDomains)) {
@@ -214,6 +220,7 @@ export const updateProject = async (req, res) => {
     if (Array.isArray(excludedUrls)) {
       update.excludedUrls = excludedUrls.map((u) => String(u).trim()).filter(Boolean);
     }
+    if (typeof deviceIdEnabled === "boolean") update.deviceIdEnabled = deviceIdEnabled;
     // Note: retentionDays is not updatable - it's set automatically based on user's plan
     await QuicklookProject.updateOne({ projectKey }, { $set: update });
     const updated = await QuicklookProject.findOne({ projectKey }).lean();
@@ -226,6 +233,7 @@ export const updateProject = async (req, res) => {
         allowedDomains: updated.allowedDomains || [],
         excludedUrls: updated.excludedUrls || [],
         retentionDays: updated.retentionDays,
+        deviceIdEnabled: Boolean(updated.deviceIdEnabled),
         createdAt: updated.createdAt,
         updatedAt: updated.updatedAt,
       },

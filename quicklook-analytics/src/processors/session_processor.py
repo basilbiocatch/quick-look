@@ -8,6 +8,7 @@ from typing import Any
 from src.db.connection import get_database
 from src.processors.dom_extractor import build_dom_cache
 from src.processors.event_fetcher import get_events_for_session
+from src.utils.db_retry import with_retry
 from src.processors.friction_detector import analyze_session as run_friction_detection
 from src.processors.root_cause_analyzer import analyze as run_root_cause_analysis
 from src.processors.session_summarizer import (
@@ -79,16 +80,18 @@ async def process_session(session_doc: dict, run_root_cause: bool = True) -> Non
             fp["root_cause"] = _rule_only_root_cause(fp)
 
     now = datetime.now(timezone.utc)
-    await coll.update_one(
-        {"sessionId": session_id},
-        {
-            "$set": {
-                "frictionScore": friction_score,
-                "frictionPoints": friction_points,
-                "aiProcessed": True,
-                "aiProcessedAt": now,
-            }
-        },
+    await with_retry(
+        lambda: coll.update_one(
+            {"sessionId": session_id},
+            {
+                "$set": {
+                    "frictionScore": friction_score,
+                    "frictionPoints": friction_points,
+                    "aiProcessed": True,
+                    "aiProcessedAt": now,
+                }
+            },
+        )
     )
 
 
@@ -136,9 +139,11 @@ async def ensure_root_cause_for_session(session_id: str, force: bool = False) ->
     logger.info("ensure_root_cause %s: root_cause=%.2fs (points=%d)", session_id[:8], time.perf_counter() - t1, len(to_analyze))
     # Points beyond MAX_ROOT_CAUSE_PER_SESSION or already full are unchanged
 
-    await coll.update_one(
-        {"sessionId": session_id},
-        {"$set": {"frictionPoints": friction_points}},
+    await with_retry(
+        lambda: coll.update_one(
+            {"sessionId": session_id},
+            {"$set": {"frictionPoints": friction_points}},
+        )
     )
     return friction_points, True
 
@@ -182,8 +187,10 @@ async def ensure_summary_for_session(session_id: str) -> tuple[dict[str, Any] | 
     ai_summary = build_ai_summary_with_generated_at(summary)
     logger.info("ensure_summary %s: summarizer=%.2fs", session_id[:8], time.perf_counter() - t1)
 
-    await coll.update_one(
-        {"sessionId": session_id},
-        {"$set": {"aiSummary": ai_summary}},
+    await with_retry(
+        lambda: coll.update_one(
+            {"sessionId": session_id},
+            {"$set": {"aiSummary": ai_summary}},
+        )
     )
     return ai_summary, True

@@ -86,7 +86,7 @@ function decompressChunkData(data, compressed) {
 }
 
 export const QuicklookService = {
-  async startSession({ projectKey, meta, user, ipAddress, retentionDays, geo = null, attributes = null, parentSessionId = null, sessionChainId = null, sequenceNumber = 1, splitReason = null }) {
+  async startSession({ projectKey, meta, user, ipAddress, retentionDays, geo = null, attributes = null, parentSessionId = null, sessionChainId = null, sequenceNumber = 1, splitReason = null, deviceId = null, deviceFingerprint = null }) {
     // Get project to use its retentionDays (set based on plan)
     const project = await QuicklookProject.findOne({ projectKey }).select("owner retentionDays").lean();
     if (!project) {
@@ -141,6 +141,8 @@ export const QuicklookService = {
       ...(sessionChainId ? { sessionChainId } : {}),
       sequenceNumber: sequenceNumber || 1,
       ...(splitReason ? { splitReason } : {}),
+      ...(deviceId ? { deviceId } : {}),
+      ...(deviceFingerprint ? { deviceFingerprint } : {}),
     });
     await doc.save();
     return { sessionId, sessionChainId: doc.sessionChainId };
@@ -239,10 +241,12 @@ export const QuicklookService = {
     return { success: true };
   },
 
-  async getSessions({ projectKey, status, from, to, limit = 50, skip = 0 }) {
+  async getSessions({ projectKey, status, from, to, limit = 50, skip = 0, ipAddress, deviceId }) {
     const query = {};
     if (projectKey) query.projectKey = projectKey;
     if (status) query.status = status;
+    if (ipAddress && String(ipAddress).trim()) query.ipAddress = String(ipAddress).trim();
+    if (deviceId && String(deviceId).trim()) query.deviceId = String(deviceId).trim();
     if (from || to) {
       query.createdAt = {};
       if (from) query.createdAt.$gte = new Date(from);

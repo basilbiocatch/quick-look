@@ -26,6 +26,11 @@ api.interceptors.response.use(
   }
 );
 
+/**
+ * Fetches sessions.
+ * Query params: from, to, and any rest (projectKey, deviceId, ipAddress, limit, skip).
+ * deviceId is included in the request as a query param when provided in params.
+ */
 export const getSessions = (params) => {
   const { from, to, ...rest } = params || {};
   const query = { ...rest };
@@ -52,6 +57,17 @@ export const getReports = (projectKey, params) =>
 export const getReport = (reportId) => api.get(`/reports/${reportId}`);
 export const postReportsGenerate = (projectKey, options) =>
   api.post("/reports/generate", { projectKey, ...options }, { params: { projectKey, ...options } });
+
+export const getAbTests = (projectKey, params) =>
+  api.get("/ab-tests", { params: { projectKey, ...params } });
+export const getAbTest = (testId) => api.get(`/ab-tests/${testId}`);
+export const createAbTest = (body) => api.post("/ab-tests", body);
+export const patchAbTest = (testId, body) => api.patch(`/ab-tests/${testId}`, body);
+
+export const getAccuracyMetrics = (projectKey) =>
+  api.get("/accuracy-metrics", { params: { projectKey } });
+export const postModelsRetrain = (projectKey) =>
+  api.post("/models/retrain", {}, { params: projectKey ? { projectKey } : {} });
 
 export const getProjects = () => api.get("/projects");
 export const createProject = (body) => api.post("/projects", body);

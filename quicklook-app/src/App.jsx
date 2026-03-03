@@ -3,6 +3,8 @@ import SessionsPage from "./pages/SessionsPage";
 import ReplayPage from "./pages/ReplayPage";
 import InsightsPage from "./pages/InsightsPage";
 import ReportsPage from "./pages/ReportsPage";
+import AbTestsPage from "./pages/AbTestsPage";
+import AccuracyPage from "./pages/AccuracyPage";
 import HomePage from "./pages/HomePage";
 import MarketingHomePage from "./pages/MarketingHomePage";
 import LoginPage from "./pages/LoginPage";
@@ -189,6 +191,22 @@ function App() {
             element={
               <PageTransition>
                 <ReportsPage />
+              </PageTransition>
+            }
+          />
+          <Route
+            path="projects/:projectKey/ab-tests"
+            element={
+              <PageTransition>
+                <AbTestsPage />
+              </PageTransition>
+            }
+          />
+          <Route
+            path="projects/:projectKey/accuracy"
+            element={
+              <PageTransition>
+                <AccuracyPage />
               </PageTransition>
             }
           />

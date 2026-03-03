@@ -15,14 +15,18 @@ import {
   Select,
   MenuItem,
   Divider,
+  Rating,
+  TextField,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from "@mui/material";
 import { useNavigate, useParams } from "react-router-dom";
 import LightbulbIcon from "@mui/icons-material/Lightbulb";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
-import TrendingDownIcon from "@mui/icons-material/TrendingDown";
-import PeopleIcon from "@mui/icons-material/People";
-import { getInsights, patchInsight, postInsightsGenerate } from "../api/quicklookApi";
+import { getInsights, patchInsight, postInsightsGenerate, createAbTest } from "../api/quicklookApi";
 
 const STATUS_OPTIONS = [
   { value: "", label: "All" },
@@ -48,6 +52,10 @@ export default function InsightsPage() {
   const [selectedInsight, setSelectedInsight] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [patching, setPatching] = useState(false);
+  const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
+  const [resolveActualLift, setResolveActualLift] = useState("");
+  const [createAbDialogOpen, setCreateAbDialogOpen] = useState(false);
+  const [creatingAb, setCreatingAb] = useState(false);
 
   const fetchInsights = useCallback(() => {
     if (!projectKey) return;
@@ -85,9 +93,31 @@ export default function InsightsPage() {
       .finally(() => setGenerating(false));
   };
 
-  const handlePatchStatus = (insightId, status) => {
+  const handlePatchStatus = (insightId, status, extra = {}) => {
     setPatching(true);
-    patchInsight(insightId, { status })
+    patchInsight(insightId, { status, ...extra })
+      .then((res) => {
+        if (res.data?.data) {
+          setInsights((prev) =>
+            prev.map((i) => (i.insightId === insightId ? { ...i, ...res.data.data } : i))
+          );
+          if (selectedInsight?.insightId === insightId) {
+            setSelectedInsight((prev) => (prev ? { ...prev, ...res.data.data } : null));
+          }
+        }
+        setResolveDialogOpen(false);
+        setResolveActualLift("");
+      })
+      .catch((err) => {
+        setError(err.response?.data?.error || err.message || "Failed to update");
+      })
+      .finally(() => setPatching(false));
+  };
+
+  const handleRateAccuracy = (insightId, rating) => {
+    if (rating == null) return;
+    setPatching(true);
+    patchInsight(insightId, { accuracyRating: rating })
       .then((res) => {
         if (res.data?.data) {
           setInsights((prev) =>
@@ -99,9 +129,46 @@ export default function InsightsPage() {
         }
       })
       .catch((err) => {
-        setError(err.response?.data?.error || err.message || "Failed to update");
+        setError(err.response?.data?.error || err.message || "Failed to save rating");
       })
       .finally(() => setPatching(false));
+  };
+
+  const handleMarkResolvedClick = () => {
+    if (!selectedInsight) return;
+    setResolveActualLift("");
+    setResolveDialogOpen(true);
+  };
+
+  const handleConfirmResolve = () => {
+    if (!selectedInsight) return;
+    const lift = parseFloat(resolveActualLift, 10);
+    const extra = Number.isNaN(lift) ? {} : { actualLift: lift };
+    handlePatchStatus(selectedInsight.insightId, "resolved", extra);
+  };
+
+  const handleCreateAbTest = () => {
+    if (!selectedInsight || !projectKey) return;
+    const firstFix = Array.isArray(selectedInsight.suggestedFixes) && selectedInsight.suggestedFixes[0]
+      ? selectedInsight.suggestedFixes[0]
+      : null;
+    const lift = firstFix?.predictedLift || firstFix?.expectedLift;
+    setCreatingAb(true);
+    createAbTest({
+      projectKey,
+      insightId: selectedInsight.insightId,
+      hypothesis: selectedInsight.rootCause || "",
+      changeDescription: firstFix?.description || selectedInsight.rootCause || "",
+      expectedLift: lift && typeof lift === "object" ? { min: lift.min, max: lift.max } : undefined,
+    })
+      .then(() => {
+        setCreateAbDialogOpen(false);
+        navigate(`/projects/${projectKey}/ab-tests`);
+      })
+      .catch((err) => {
+        setError(err.response?.data?.error || err.message || "Failed to create A/B test");
+      })
+      .finally(() => setCreatingAb(false));
   };
 
   const criticalCount = insights.filter(
@@ -306,6 +373,9 @@ export default function InsightsPage() {
               >
                 Suggested fixes (A/B ideas)
               </Typography>
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                We predict how much each fix could improve conversion. If you run a test and record the real result in A/B Tests, our predictions get better over time.
+              </Typography>
               {Array.isArray(selectedInsight.suggestedFixes) &&
               selectedInsight.suggestedFixes.length > 0 ? (
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, mt: 1 }}>
@@ -383,6 +453,26 @@ export default function InsightsPage() {
                   (with the analytics service updated) to get A/B fix suggestions and predicted lift.
                 </Typography>
               )}
+              {/* Rate accuracy (Phase 7 feedback) */}
+              <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ mt: 2 }}>
+                Rate accuracy
+              </Typography>
+              <Rating
+                name="accuracy"
+                value={selectedInsight.accuracyRating ?? 0}
+                max={5}
+                size="small"
+                disabled={patching}
+                onChange={(_, v) => handleRateAccuracy(selectedInsight.insightId, v)}
+              />
+              {selectedInsight.resolvedAt && (
+                <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 0.5 }}>
+                  Resolved {new Date(selectedInsight.resolvedAt).toLocaleDateString()}
+                  {selectedInsight.actualLift != null && (
+                    <> · Actual lift: {Number(selectedInsight.actualLift).toFixed(1)}%</>
+                  )}
+                </Typography>
+              )}
               <Box sx={{ mt: 2, display: "flex", flexDirection: "column", gap: 1 }}>
                 <Button
                   size="small"
@@ -391,13 +481,20 @@ export default function InsightsPage() {
                 >
                   View sessions
                 </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => setCreateAbDialogOpen(true)}
+                >
+                  Track as A/B test
+                </Button>
                 {selectedInsight.status === "active" && (
                   <>
                     <Button
                       size="small"
                       color="primary"
                       disabled={patching}
-                      onClick={() => handlePatchStatus(selectedInsight.insightId, "resolved")}
+                      onClick={handleMarkResolvedClick}
                     >
                       Mark resolved
                     </Button>
@@ -411,6 +508,44 @@ export default function InsightsPage() {
                   </>
                 )}
               </Box>
+              <Dialog open={createAbDialogOpen} onClose={() => setCreateAbDialogOpen(false)}>
+                <DialogTitle>Track as A/B test</DialogTitle>
+                <DialogContent>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    We&apos;ll save this insight and our predicted lift so you can track the experiment. You run the actual A/B test in your own app or tool. When it&apos;s done, go to <strong>A/B Tests</strong> and record the real result—that helps us improve our predictions for you next time.
+                  </Typography>
+                </DialogContent>
+                <DialogActions>
+                  <Button onClick={() => setCreateAbDialogOpen(false)}>Cancel</Button>
+                  <Button variant="contained" onClick={handleCreateAbTest} disabled={creatingAb}>
+                    {creatingAb ? "Creating…" : "Create"}
+                  </Button>
+                </DialogActions>
+              </Dialog>
+              <Dialog open={resolveDialogOpen} onClose={() => setResolveDialogOpen(false)}>
+                <DialogTitle>Mark as resolved</DialogTitle>
+                <DialogContent>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    Optional: enter the actual conversion lift (%) you observed (e.g. from an A/B test)
+                    to improve future predictions.
+                  </Typography>
+                  <TextField
+                    size="small"
+                    label="Actual lift (%)"
+                    type="number"
+                    inputProps={{ min: 0, max: 100, step: 0.1 }}
+                    value={resolveActualLift}
+                    onChange={(e) => setResolveActualLift(e.target.value)}
+                    fullWidth
+                  />
+                </DialogContent>
+                <DialogActions>
+                  <Button onClick={() => setResolveDialogOpen(false)}>Cancel</Button>
+                  <Button variant="contained" onClick={handleConfirmResolve} disabled={patching}>
+                    Resolve
+                  </Button>
+                </DialogActions>
+              </Dialog>
             </CardContent>
           ) : (
             <CardContent>

@@ -16,7 +16,12 @@ export const startQuicklookRetentionJob = () => {
           logger.info(`QuicklookRetention: deleted ${result.deleted} expired sessions`);
         }
       } catch (err) {
-        logger.error("QuicklookRetention job error:", err);
+        const msg = err?.message || String(err);
+        if (msg.includes("ENETUNREACH") || msg.includes("ECONNREFUSED")) {
+          logger.warn("QuicklookRetention job: MongoDB unreachable (%s). Will retry next run.", msg.slice(0, 80));
+        } else {
+          logger.error("QuicklookRetention job error:", err);
+        }
       }
     },
     { scheduled: true, timezone: "UTC" }
@@ -38,7 +43,12 @@ export const startAutoCloseInactiveSessionsJob = () => {
           logger.info(`QuicklookAutoClose: closed ${result.closed} inactive sessions`);
         }
       } catch (err) {
-        logger.error("QuicklookAutoClose job error:", err);
+        const msg = err?.message || String(err);
+        if (msg.includes("ENETUNREACH") || msg.includes("ECONNREFUSED")) {
+          logger.warn("QuicklookAutoClose job: MongoDB unreachable (%s). Will retry next run.", msg.slice(0, 80));
+        } else {
+          logger.error("QuicklookAutoClose job error:", err);
+        }
       }
     },
     { scheduled: true, timezone: "UTC" }

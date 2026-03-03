@@ -18,7 +18,12 @@ export const startStorageCostJob = () => {
           totalCostUsd: result.totalCost,
         });
       } catch (err) {
-        logger.error("StorageCost job error:", err);
+        const msg = err?.message || String(err);
+        if (msg.includes("ENETUNREACH") || msg.includes("ECONNREFUSED")) {
+          logger.warn("StorageCost job: MongoDB unreachable (%s). Will retry next run.", msg.slice(0, 80));
+        } else {
+          logger.error("StorageCost job error:", err);
+        }
       }
     },
     { scheduled: true, timezone: "UTC" }

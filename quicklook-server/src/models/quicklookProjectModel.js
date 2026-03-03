@@ -15,6 +15,8 @@ const projectSchema = new mongoose.Schema(
     allowedDomains: { type: [String], default: [] },
     /** URL path or substring patterns: pages matching any of these are not monitored by the SDK. */
     excludedUrls: { type: [String], default: [] },
+    /** When true, SDK collects QL Device ID for session correlation (same device across sessions). Default false. */
+    deviceIdEnabled: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
     // AI UX Analytics (Phase 1) — all optional

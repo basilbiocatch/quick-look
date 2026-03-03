@@ -20,6 +20,10 @@ const insightSchema = new mongoose.Schema(
     suggestedFixes: [mongoose.Schema.Types.Mixed], // [{ description, predictedLift: { min, max }, confidence, priority }]
     status: { type: String, enum: ["active", "resolved", "ignored"], default: "active" },
     notes: { type: String },
+    // Phase 7: feedback loop
+    accuracyRating: { type: Number }, // 1-5 when user rates insight accuracy
+    resolvedAt: { type: Date },
+    actualLift: { type: Number }, // observed lift (%) when resolved / from A/B
     createdAt: { type: Date, default: Date.now, index: true },
     updatedAt: { type: Date, default: Date.now },
     expiresAt: { type: Date },

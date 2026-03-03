@@ -60,6 +60,8 @@ export default function ReplayPage() {
   const [aiSummary, setAiSummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState("");
+  const [relatedSessionsByIp, setRelatedSessionsByIp] = useState([]);
+  const [relatedSessionsByDevice, setRelatedSessionsByDevice] = useState([]);
   const countdownRef = useRef(null);
   const countdownIntervalRef = useRef(null);
   const skipMessageTimeoutRef = useRef(null);
@@ -76,6 +78,8 @@ export default function ReplayPage() {
     setAiSummary(null);
     setSummaryError("");
     setSummaryLoading(false);
+    setRelatedSessionsByIp([]);
+    setRelatedSessionsByDevice([]);
     (async () => {
       setLoading(true);
       setError("");
@@ -105,6 +109,38 @@ export default function ReplayPage() {
           setSessionsList(sessions);
           const index = sessions.findIndex((s) => s.sessionId === sessionId);
           setCurrentSessionIndex(index);
+        }
+
+        // Related sessions (same IP, same project) for suggestions
+        if (projectKey && sessionData?.ipAddress && !cancelled) {
+          try {
+            const relatedRes = await getSessions({
+              projectKey,
+              ipAddress: sessionData.ipAddress,
+              limit: 50,
+            });
+            if (!cancelled) setRelatedSessionsByIp(relatedRes.data?.data ?? []);
+          } catch {
+            if (!cancelled) setRelatedSessionsByIp([]);
+          }
+        } else if (!cancelled) {
+          setRelatedSessionsByIp([]);
+        }
+
+        // Related sessions (same device, same project)
+        if (projectKey && sessionData?.deviceId && !cancelled) {
+          try {
+            const deviceRes = await getSessions({
+              projectKey,
+              deviceId: sessionData.deviceId,
+              limit: 50,
+            });
+            if (!cancelled) setRelatedSessionsByDevice(deviceRes.data?.data ?? []);
+          } catch {
+            if (!cancelled) setRelatedSessionsByDevice([]);
+          }
+        } else if (!cancelled) {
+          setRelatedSessionsByDevice([]);
         }
 
         // On-demand AI summary (analytics): ensure-summary when opening session
@@ -1027,6 +1063,8 @@ export default function ReplayPage() {
           aiSummary={aiSummary}
           summaryLoading={summaryLoading}
           summaryError={summaryError}
+          relatedSessionsByIp={relatedSessionsByIp}
+          relatedSessionsByDevice={relatedSessionsByDevice}
         />
       </Box>
       {/* Brief message when "Skip inactivity" jumps over a long gap */}

@@ -13,6 +13,8 @@ import { useNavigate, useParams, useLocation } from "react-router-dom";
 import VideocamIcon from "@mui/icons-material/Videocam";
 import LightbulbIcon from "@mui/icons-material/Lightbulb";
 import AssessmentIcon from "@mui/icons-material/Assessment";
+import ScienceIcon from "@mui/icons-material/Science";
+import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import SettingsIcon from "@mui/icons-material/Settings";
 import FolderIcon from "@mui/icons-material/Folder";
 import AddIcon from "@mui/icons-material/Add";
@@ -70,6 +72,8 @@ export default function MainNavBar() {
   const isSessionsActive = Boolean(routeProjectKey && pathname.endsWith("/sessions"));
   const isInsightsActive = Boolean(routeProjectKey && pathname.includes("/insights"));
   const isReportsActive = Boolean(routeProjectKey && pathname.includes("/reports"));
+  const isAbTestsActive = Boolean(routeProjectKey && pathname.includes("/ab-tests"));
+  const isAccuracyActive = Boolean(routeProjectKey && pathname.includes("/accuracy"));
   const isSettingsActive = pathname.includes("/settings");
 
   return (
@@ -238,6 +242,52 @@ export default function MainNavBar() {
             }}
           >
             <AssessmentIcon />
+          </IconButton>
+        </Tooltip>
+      </Box>
+
+      {/* A/B Tests */}
+      <Box sx={{ display: "flex", justifyContent: "center", py: 0.5 }}>
+        <Tooltip title="A/B Tests" placement="right">
+          <IconButton
+            onClick={(e) => {
+              if (projectKey) navigate(`/projects/${projectKey}/ab-tests`);
+              else setProjectMenuAnchor(e.currentTarget);
+            }}
+            sx={{
+              ...iconButtonSx,
+              ...(isAbTestsActive && {
+                color: "#fff",
+                bgcolor: "rgba(255,255,255,0.18)",
+                "&:hover": { bgcolor: "rgba(255,255,255,0.22)" },
+              }),
+              "& .MuiSvgIcon-root": { fontSize: 24 },
+            }}
+          >
+            <ScienceIcon />
+          </IconButton>
+        </Tooltip>
+      </Box>
+
+      {/* Accuracy */}
+      <Box sx={{ display: "flex", justifyContent: "center", py: 0.5 }}>
+        <Tooltip title="Accuracy" placement="right">
+          <IconButton
+            onClick={(e) => {
+              if (projectKey) navigate(`/projects/${projectKey}/accuracy`);
+              else setProjectMenuAnchor(e.currentTarget);
+            }}
+            sx={{
+              ...iconButtonSx,
+              ...(isAccuracyActive && {
+                color: "#fff",
+                bgcolor: "rgba(255,255,255,0.18)",
+                "&:hover": { bgcolor: "rgba(255,255,255,0.22)" },
+              }),
+              "& .MuiSvgIcon-root": { fontSize: 24 },
+            }}
+          >
+            <TrendingUpIcon />
           </IconButton>
         </Tooltip>
       </Box>

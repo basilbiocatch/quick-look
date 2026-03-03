@@ -13,6 +13,8 @@ const sessionSchema = new mongoose.Schema(
     retentionDays: { type: Number, default: 30 },
     expiresAt: { type: Date, index: true },
     ipAddress: { type: String },
+    deviceId: { type: String, index: true },
+    deviceFingerprint: { type: String },
     // Session chain fields for linking split sessions
     sessionChainId: { type: String, index: true },
     parentSessionId: { type: String, index: true },

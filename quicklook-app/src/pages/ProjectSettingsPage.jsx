@@ -29,6 +29,9 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import BlockIcon from "@mui/icons-material/Block";
 import PublicIcon from "@mui/icons-material/Public";
 import ScheduleIcon from "@mui/icons-material/Schedule";
+import FingerprintIcon from "@mui/icons-material/Fingerprint";
+import Switch from "@mui/material/Switch";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import SettingsIcon from "@mui/icons-material/Settings";
 import CodeIcon from "@mui/icons-material/Code";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
@@ -56,6 +59,7 @@ export default function ProjectSettingsPage() {
   const [tabIndex, setTabIndex] = useState(0);
   const [integrationMode, setIntegrationMode] = useState("developer");
   const [copied, setCopied] = useState(false);
+  const [deviceIdEnabled, setDeviceIdEnabled] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -71,6 +75,7 @@ export default function ProjectSettingsPage() {
           setName(p.name || "");
           setAllowedDomains(Array.isArray(p.allowedDomains) ? [...p.allowedDomains] : []);
           setExcludedUrls(p.excludedUrls || []);
+          setDeviceIdEnabled(Boolean(p.deviceIdEnabled));
         }
       })
       .catch((err) => {
@@ -111,6 +116,7 @@ export default function ProjectSettingsPage() {
       name: name.trim() || project?.name,
       allowedDomains,
       excludedUrls,
+      deviceIdEnabled,
     };
     updateProject(projectKey, payload)
       .then((res) => {
@@ -120,6 +126,7 @@ export default function ProjectSettingsPage() {
           setName(p.name || "");
           setAllowedDomains(Array.isArray(p.allowedDomains) ? [...p.allowedDomains] : []);
           setExcludedUrls(p.excludedUrls || []);
+          setDeviceIdEnabled(Boolean(p.deviceIdEnabled));
         }
       })
       .catch((err) => {
@@ -140,8 +147,9 @@ export default function ProjectSettingsPage() {
     excludedUrls.some((u, i) => {
       return projectExcluded[i] !== u;
     });
+  const deviceIdEnabledChanged = project ? deviceIdEnabled !== Boolean(project.deviceIdEnabled) : false;
   const nameChanged = project ? name.trim() !== (project.name || "") : false;
-  const hasChanges = project && (nameChanged || domainsChanged || excludedUrlsChanged);
+  const hasChanges = project && (nameChanged || domainsChanged || excludedUrlsChanged || deviceIdEnabledChanged);
 
   const apiBase = getApiBase();
   const integrationSnippet = project
@@ -293,6 +301,26 @@ ${integrationSnippet}`
                   No domains added. Any origin can send recordings.
                 </Typography>
               )}
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5, mt: 2 }}>
+                <FingerprintIcon color="action" sx={{ fontSize: 20 }} />
+                <Typography variant="subtitle2" fontWeight={600}>
+                  QL Device ID
+                </Typography>
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                When enabled, the SDK collects a persistent device identifier to correlate sessions from the same device (e.g. show &quot;Related sessions&quot; by device in replay). Disabled by default for privacy.
+              </Typography>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={deviceIdEnabled}
+                    onChange={(e) => setDeviceIdEnabled(e.target.checked)}
+                    color="primary"
+                  />
+                }
+                label={deviceIdEnabled ? "Device ID enabled — sessions correlated by device" : "Device ID disabled"}
+                sx={{ mb: 2 }}
+              />
               <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5, mt: 2 }}>
                 <ScheduleIcon color="action" sx={{ fontSize: 20 }} />
                 <Typography variant="subtitle2" fontWeight={600}>
