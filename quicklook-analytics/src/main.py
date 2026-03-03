@@ -12,6 +12,7 @@ from src.db.connection import get_database
 from src.processors.behavior_clusterer import run_clustering_for_project
 from src.processors.insight_generator import run_insight_generation_for_project
 from src.processors.pattern_library import sync_patterns_from_insights
+from src.reports.report_generator import generate_report
 from src.processors.session_processor import (
     ensure_root_cause_for_session,
     ensure_summary_for_session,
@@ -178,6 +179,82 @@ async def patterns_sync(request: Request, response: Response) -> dict[str, Any]:
         logger.exception("POST /patterns/sync failed: %s", e)
         response.status_code = 500
         return {"success": False, "error": str(e)}
+
+
+@app.post("/reports/generate")
+async def reports_generate(request: Request, response: Response) -> dict[str, Any]:
+    """
+    Generate a UX report for a project. Query params: projectKey (required), type=weekly|daily|monthly, use_llm=1|0.
+    """
+    project_key = request.query_params.get("projectKey", "").strip()
+    if not project_key:
+        response.status_code = 400
+        return {"success": False, "error": "projectKey is required"}
+    report_type = (request.query_params.get("type") or "weekly").lower()
+    if report_type not in ("daily", "weekly", "monthly"):
+        report_type = "weekly"
+    use_llm = request.query_params.get("use_llm", "1").lower() in ("1", "true", "yes")
+    try:
+        report = await generate_report(
+            get_database,
+            project_key,
+            report_type=report_type,
+            use_llm=use_llm,
+        )
+        return {"success": True, "data": report}
+    except Exception as e:
+        logger.exception("POST /reports/generate failed: %s", e)
+        response.status_code = 500
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/reports")
+async def list_reports(request: Request) -> dict[str, Any]:
+    """List reports for a project. Query params: projectKey (required), limit=20, type=weekly|daily|monthly."""
+    project_key = request.query_params.get("projectKey", "").strip()
+    if not project_key:
+        return {"success": False, "error": "projectKey is required", "data": []}
+    try:
+        limit_val = request.query_params.get("limit", "20")
+        limit = min(50, max(1, int(limit_val)))
+    except ValueError:
+        limit = 20
+    report_type = request.query_params.get("type", "").strip().lower() or None
+    db = get_database()
+    coll = db["quicklook_reports"]
+    query = {"projectKey": project_key}
+    if report_type and report_type in ("daily", "weekly", "monthly"):
+        query["type"] = report_type
+    cursor = coll.find(query).sort("generatedAt", -1).limit(limit)
+    reports = [doc async for doc in cursor]
+    for r in reports:
+        r.pop("_id", None)
+        if r.get("period") and isinstance(r["period"], dict):
+            r["period"] = {
+                k: v.isoformat() if hasattr(v, "isoformat") else v
+                for k, v in r["period"].items()
+            }
+        if hasattr(r.get("generatedAt"), "isoformat"):
+            r["generatedAt"] = r["generatedAt"].isoformat()
+    return {"success": True, "data": reports}
+
+
+@app.get("/reports/{report_id}")
+async def get_report(report_id: str) -> dict[str, Any]:
+    """Get a single report by reportId."""
+    db = get_database()
+    report = await db["quicklook_reports"].find_one({"reportId": report_id})
+    if not report:
+        return {"success": False, "error": "Report not found", "data": None}
+    report.pop("_id", None)
+    if report.get("period") and isinstance(report["period"], dict):
+        report["period"] = {
+            k: v.isoformat() if hasattr(v, "isoformat") else v
+            for k, v in report["period"].items()
+        }
+    if hasattr(report.get("generatedAt"), "isoformat"):
+        report["generatedAt"] = report["generatedAt"].isoformat()
+    return {"success": True, "data": report}
 
 
 def _decode_pubsub_body(body: bytes) -> dict[str, Any]:

@@ -98,11 +98,12 @@ def _has_full_root_cause(fp: dict) -> bool:
     return isinstance(rc, dict) and "confidence" in rc
 
 
-async def ensure_root_cause_for_session(session_id: str) -> tuple[list[dict], bool]:
+async def ensure_root_cause_for_session(session_id: str, force: bool = False) -> tuple[list[dict], bool]:
     """
-    On-demand: ensure session's friction points have Gemini root cause. If they already do, return
-    immediately. Otherwise load events, run Gemini for each point (up to MAX_ROOT_CAUSE_PER_SESSION),
-    persist to session, return. Returns (friction_points, generated) where generated=True if we ran Gemini.
+    On-demand: ensure session's friction points have Gemini root cause. If they already do (and not force),
+    return immediately. Otherwise load events, run Gemini for each point (up to MAX_ROOT_CAUSE_PER_SESSION),
+    persist to session, return. Returns (friction_points, generated).
+    When force=True, re-run Gemini for all points (up to max) even if they already have a root cause (e.g. to fix truncated text).
     """
     db = get_database()
     coll = db[SESSION_COLLECTION]
@@ -114,7 +115,10 @@ async def ensure_root_cause_for_session(session_id: str) -> tuple[list[dict], bo
     if not friction_points:
         return friction_points, False
 
-    to_analyze = [fp for fp in friction_points[:MAX_ROOT_CAUSE_PER_SESSION] if not _has_full_root_cause(fp)]
+    if force:
+        to_analyze = friction_points[:MAX_ROOT_CAUSE_PER_SESSION]
+    else:
+        to_analyze = [fp for fp in friction_points[:MAX_ROOT_CAUSE_PER_SESSION] if not _has_full_root_cause(fp)]
     if not to_analyze:
         return friction_points, False
 

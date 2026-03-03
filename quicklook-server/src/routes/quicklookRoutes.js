@@ -3,6 +3,7 @@
 import express from "express";
 import * as quicklookController from "../controllers/quicklookController.js";
 import * as insightsController from "../controllers/insightsController.js";
+import * as reportsController from "../controllers/reportsController.js";
 import { requireAuth } from "../middleware/jwtAuth.js";
 import { validateOrigin } from "../middleware/validateOrigin.js";
 import { isDbConnected } from "../db.js";
@@ -41,5 +42,9 @@ router.get("/insights", requireAuth, insightsController.getInsights);
 router.post("/insights/generate", requireAuth, insightsController.postInsightsGenerate);
 router.get("/insights/:insightId", requireAuth, insightsController.getInsightById);
 router.patch("/insights/:insightId", requireAuth, insightsController.patchInsight);
+
+router.get("/reports", requireAuth, reportsController.getReports);
+router.get("/reports/:reportId", requireAuth, reportsController.getReportById);
+router.post("/reports/generate", requireAuth, reportsController.postReportsGenerate);
 
 export default router;

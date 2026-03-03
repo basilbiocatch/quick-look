@@ -12,6 +12,10 @@ from src.utils.llm_client import generate
 logger = logging.getLogger(__name__)
 
 
+# Max length for root_cause when extracting from raw LLM output (avoid huge stored strings)
+_ROOT_CAUSE_MAX_CHARS = 1500
+
+
 def _extract_root_cause_from_text(raw: str, fallback: str) -> str:
     """When JSON parse fails, try to extract the root_cause value from raw response."""
     if not raw or not isinstance(raw, str):
@@ -21,13 +25,13 @@ def _extract_root_cause_from_text(raw: str, fallback: str) -> str:
     if m:
         s = m.group(1).replace("\\n", " ").replace("\\\"", '"').strip()
         if s:
-            return s[:500]
+            return s[:_ROOT_CAUSE_MAX_CHARS]
     # Truncated JSON: "root_cause": "something (no closing quote)
     m2 = re.search(r'"root_cause"\s*:\s*"((?:[^"\\]|\\.)*)', raw)
     if m2:
         s = m2.group(1).replace("\\n", " ").replace("\\\"", '"').strip()
         if s:
-            return s[:500]
+            return s[:_ROOT_CAUSE_MAX_CHARS]
     return fallback
 
 
@@ -86,14 +90,14 @@ Recent user actions (timestamp @ms):
 {action_summary}
 
 Respond with a single valid JSON object only (no markdown, no code block). Keys:
-- "root_cause": one or two short sentences, plain text, explaining why the user struggled.
+- "root_cause": one or two complete sentences, plain text, explaining why the user struggled. Each sentence must end with a period. Do not stop mid-sentence. Maximum 2 sentences.
 - "evidence": object with optional short strings "dom_issue", "ux_issue", "behavioral".
 - "confidence": number between 0 and 1.
 
 Example: {{"root_cause": "Submit button was obscured on mobile.", "evidence": {{"dom_issue": "Button below fold"}}, "confidence": 0.85}}
 """
 
-    text = await generate(prompt, temperature=0.2, max_tokens=512)
+    text = await generate(prompt, temperature=0.2, max_tokens=2048)
     if not text:
         return {
             "root_cause": f"Rule-based: {context_str}",
@@ -116,7 +120,7 @@ Example: {{"root_cause": "Submit button was obscured on mobile.", "evidence": {{
     except json.JSONDecodeError:
         extracted = _extract_root_cause_from_text(text, context_str)
         return {
-            "root_cause": extracted[:500] if len(extracted) > 500 else extracted,
+            "root_cause": extracted[:_ROOT_CAUSE_MAX_CHARS] if len(extracted) > _ROOT_CAUSE_MAX_CHARS else extracted,
             "evidence": {"behavioral": context_str},
             "confidence": 0.5,
         }

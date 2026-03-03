@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, useLocation, Outlet } from "react-router-dom";
 import SessionsPage from "./pages/SessionsPage";
 import ReplayPage from "./pages/ReplayPage";
 import InsightsPage from "./pages/InsightsPage";
+import ReportsPage from "./pages/ReportsPage";
 import HomePage from "./pages/HomePage";
 import MarketingHomePage from "./pages/MarketingHomePage";
 import LoginPage from "./pages/LoginPage";
@@ -180,6 +181,14 @@ function App() {
             element={
               <PageTransition>
                 <InsightsPage />
+              </PageTransition>
+            }
+          />
+          <Route
+            path="projects/:projectKey/reports"
+            element={
+              <PageTransition>
+                <ReportsPage />
               </PageTransition>
             }
           />

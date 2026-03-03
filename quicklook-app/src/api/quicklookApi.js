@@ -47,6 +47,12 @@ export const patchInsight = (insightId, body) => api.patch(`/insights/${insightI
 export const postInsightsGenerate = (projectKey) =>
   api.post("/insights/generate", { projectKey }, { params: { projectKey } });
 
+export const getReports = (projectKey, params) =>
+  api.get("/reports", { params: { projectKey, ...params } });
+export const getReport = (reportId) => api.get(`/reports/${reportId}`);
+export const postReportsGenerate = (projectKey, options) =>
+  api.post("/reports/generate", { projectKey, ...options }, { params: { projectKey, ...options } });
+
 export const getProjects = () => api.get("/projects");
 export const createProject = (body) => api.post("/projects", body);
 export const getProject = (projectKey) => api.get(`/projects/${projectKey}`);

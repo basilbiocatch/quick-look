@@ -1,4 +1,4 @@
-# Next Phase Handoff: Phase 5 (A/B Test Suggestions & Pattern Library)
+# Next Phase Handoff: Phase 6 (Automated Reports)
 
 ---
 
@@ -201,14 +201,25 @@ Read plan Phase 3, Feature 6, Feature 1, Section 3, Section 4, Section 10, and t
 
 ---
 
-## After Phase 5: Phase 6
+## Phase 6 implementation status (done)
 
-Phase 6 (Automated Reports) will add:
+- **anomaly_detector.py** – Daily aggregates (friction score, conversion rate); flag days beyond mean ± 2× std. `detect_anomalies(get_database_fn, project_key, start_date, end_date)`.
+- **report_generator.py** – `generate_report(get_database_fn, project_key, report_type=weekly, use_llm=True)`: aggregate metrics, top insights, clusters, anomalies; one Gemini call for summary + sections (markdown); store in `quicklook_reports`.
+- **quicklook_reports** – reportId, projectKey, type (daily|weekly|monthly), period, title, summary, sections[], metrics, generatedAt.
+- **Analytics routes** – POST /reports/generate (projectKey, type, use_llm), GET /reports?projectKey&limit&type, GET /reports/:reportId.
+- **Server** – QuicklookReport model, getReports, getReportById, postReportsGenerate (proxy to analytics); GET/POST /api/quicklook/reports.
+- **Frontend** – ReportsPage.jsx (list reports, generate report, view summary + sections); Reports nav item; route projects/:projectKey/reports.
 
-- `report_generator.py` – Daily/weekly UX reports with Gemini narratives.
-- `anomaly_detector.py` – Time-series anomaly detection and alerts.
-- Email delivery (optional), report viewer in dashboard.
-- Frontend: ReportsPage.jsx.
-- API routes: `/api/reports`.
+---
 
-Use the main plan file (Section 9 → Phase 6) and this handoff for the next agent.
+## After Phase 6: Phase 7
+
+Phase 7 (Continuous Learning & Optimization) will add:
+
+- Feedback UI (mark resolved, rate accuracy).
+- A/B test tracking integration.
+- Model retraining pipeline.
+- Pattern library auto-updates.
+- Accuracy metrics dashboard.
+
+Use the main plan file (Section 9 → Phase 7) and this handoff for the next agent.

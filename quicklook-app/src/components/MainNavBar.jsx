@@ -12,6 +12,7 @@ import {
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import VideocamIcon from "@mui/icons-material/Videocam";
 import LightbulbIcon from "@mui/icons-material/Lightbulb";
+import AssessmentIcon from "@mui/icons-material/Assessment";
 import SettingsIcon from "@mui/icons-material/Settings";
 import FolderIcon from "@mui/icons-material/Folder";
 import AddIcon from "@mui/icons-material/Add";
@@ -68,6 +69,7 @@ export default function MainNavBar() {
   const pathname = location.pathname || "";
   const isSessionsActive = Boolean(routeProjectKey && pathname.endsWith("/sessions"));
   const isInsightsActive = Boolean(routeProjectKey && pathname.includes("/insights"));
+  const isReportsActive = Boolean(routeProjectKey && pathname.includes("/reports"));
   const isSettingsActive = pathname.includes("/settings");
 
   return (
@@ -213,6 +215,29 @@ export default function MainNavBar() {
             }}
           >
             <LightbulbIcon />
+          </IconButton>
+        </Tooltip>
+      </Box>
+
+      {/* Reports */}
+      <Box sx={{ display: "flex", justifyContent: "center", py: 0.5 }}>
+        <Tooltip title="Reports" placement="right">
+          <IconButton
+            onClick={(e) => {
+              if (projectKey) navigate(`/projects/${projectKey}/reports`);
+              else setProjectMenuAnchor(e.currentTarget);
+            }}
+            sx={{
+              ...iconButtonSx,
+              ...(isReportsActive && {
+                color: "#fff",
+                bgcolor: "rgba(255,255,255,0.18)",
+                "&:hover": { bgcolor: "rgba(255,255,255,0.22)" },
+              }),
+              "& .MuiSvgIcon-root": { fontSize: 24 },
+            }}
+          >
+            <AssessmentIcon />
           </IconButton>
         </Tooltip>
       </Box>
