@@ -29,6 +29,11 @@
     <meta name="twitter:image" content="https://quicklook.io/og-image.png" />
     <!-- Preload LCP image -->
     <link rel="preload" href="/logo.png" as="image" />
+    <!-- Prevent FOUC: hide body until app has painted with styles (see main.jsx) -->
+    <style>
+      html { background-color: #0d0d0d; }
+      body { visibility: hidden; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

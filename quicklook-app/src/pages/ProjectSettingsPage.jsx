@@ -236,9 +236,32 @@ ${integrationSnippet}`
           overflow: "hidden",
         }}
       >
-        <Typography variant="caption" color="text.secondary" sx={{ display: "block", px: 3, pt: 2, pb: 0 }}>
-          Project key: <code style={{ fontSize: "0.8125rem" }}>{projectKey}</code>
-        </Typography>
+        <Box sx={{ px: 3, pt: 2, pb: 0 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+            Project ID
+          </Typography>
+          <Box
+            component="code"
+            title={projectKey}
+            sx={{
+              display: "inline-block",
+              px: 1.5,
+              py: 0.75,
+              borderRadius: 1,
+              bgcolor: "action.hover",
+              border: "1px solid",
+              borderColor: "divider",
+              fontFamily: "monospace",
+              fontSize: "0.8125rem",
+              color: "text.primary",
+              maxWidth: "100%",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {projectKey}
+          </Box>
+        </Box>
 
         <Tabs
           value={tabIndex}

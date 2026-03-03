@@ -30,7 +30,6 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import SearchIcon from "@mui/icons-material/Search";
-import FilterListIcon from "@mui/icons-material/FilterList";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import AddIcon from "@mui/icons-material/Add";
 import PlayCircleFilledIcon from "@mui/icons-material/PlayCircleFilled";
@@ -248,7 +247,7 @@ const DEFAULT_VISIBLE_COLUMNS = {
   pages: true,
   device: true,
   location: true,
-  ip: true,
+  ip: false,
 };
 
 const ROW_HEIGHT = 60;
@@ -291,6 +290,8 @@ export default function SessionsPage() {
   const [error, setError] = useState("");
   const [status, setStatus] = useState("closed");
   const [total, setTotal] = useState(0);
+  /** Whole-dataset stats from API (unique users, avg duration) for the current filter; used for header. */
+  const [wholeStats, setWholeStats] = useState(null);
   const [daysFilter, setDaysFilter] = useState(30);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
@@ -377,6 +378,7 @@ export default function SessionsPage() {
     if (!projectKey.trim()) {
       setSessions([]);
       setTotal(0);
+      setWholeStats(null);
       setLoading(false);
       return;
     }
@@ -398,10 +400,16 @@ export default function SessionsPage() {
       const data = res.data?.data || [];
       setSessions(data);
       setTotal(res.data?.total ?? data.length);
+      if (res.data?.uniqueUsers != null && res.data?.avgDurationMs != null) {
+        setWholeStats({ uniqueUsers: res.data.uniqueUsers, avgDurationMs: res.data.avgDurationMs });
+      } else {
+        setWholeStats(null);
+      }
     } catch (err) {
       setError(err.response?.data?.error || err.message || "Failed to load sessions");
       setSessions([]);
       setTotal(0);
+      setWholeStats(null);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -646,14 +654,6 @@ export default function SessionsPage() {
               <RefreshIcon sx={{ fontSize: 20 }} />
             )}
           </IconButton>
-          <IconButton
-            size="small"
-            onClick={(e) => setColumnFilterAnchor(e.currentTarget)}
-            aria-label="Column filter"
-            sx={{ color: "text.secondary" }}
-          >
-            <FilterListIcon sx={{ fontSize: 20 }} />
-          </IconButton>
           <Menu
             anchorEl={columnFilterAnchor}
             open={Boolean(columnFilterAnchor)}
@@ -763,7 +763,7 @@ export default function SessionsPage() {
                 <Box sx={{ display: "flex", alignItems: "center", gap: 3 }}>
                   <Box sx={{ textAlign: "center", minWidth: 80 }}>
                     <Typography variant="body1" fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.2 }}>
-                      {summary.users.toLocaleString()}
+                      {(wholeStats?.uniqueUsers ?? summary.users).toLocaleString()}
                     </Typography>
                     <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.6875rem", letterSpacing: "0.05em" }}>
                       USERS
@@ -771,7 +771,7 @@ export default function SessionsPage() {
                   </Box>
                   <Box sx={{ textAlign: "center", minWidth: 80 }}>
                     <Typography variant="body1" fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.2 }}>
-                      {summary.sessions.toLocaleString()}
+                      {total.toLocaleString()}
                     </Typography>
                     <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.6875rem", letterSpacing: "0.05em" }}>
                       SESSIONS
@@ -779,7 +779,7 @@ export default function SessionsPage() {
                   </Box>
                   <Box sx={{ textAlign: "center", minWidth: 80 }}>
                     <Typography variant="body1" fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.2 }}>
-                      {formatDuration(summary.avgDurationMs)}
+                      {formatDuration(wholeStats?.avgDurationMs ?? summary.avgDurationMs)}
                     </Typography>
                     <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.6875rem", letterSpacing: "0.05em" }}>
                       AVG. DURATION
@@ -826,59 +826,59 @@ export default function SessionsPage() {
                       }}
                     >
                       {visibleColumns.user && (
-                        <Box sx={{ display: "flex", alignItems: "center", minWidth: COLUMN_WIDTHS.user, mr: COLUMN_GAP }}>
+                        <Box sx={{ display: "flex", alignItems: "center", width: COLUMN_WIDTHS.user, minWidth: COLUMN_WIDTHS.user, flexShrink: 0, mr: COLUMN_GAP }}>
                           <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ fontSize: "0.75rem", letterSpacing: "0.05em" }}>
                             USER
                           </Typography>
                         </Box>
                       )}
                       {visibleColumns.play && (
-                        <Box sx={{ minWidth: COLUMN_WIDTHS.play, mr: COLUMN_GAP }} />
+                        <Box sx={{ width: COLUMN_WIDTHS.play, minWidth: COLUMN_WIDTHS.play, flexShrink: 0, mr: COLUMN_GAP }} />
                       )}
                       {visibleColumns.date && (
-                        <Box sx={{ minWidth: COLUMN_WIDTHS.date, mr: COLUMN_GAP }}>
+                        <Box sx={{ width: COLUMN_WIDTHS.date, minWidth: COLUMN_WIDTHS.date, flexShrink: 0, mr: COLUMN_GAP }}>
                           <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ fontSize: "0.75rem", letterSpacing: "0.05em" }}>
                             DATE
                           </Typography>
                         </Box>
                       )}
                       {visibleColumns.events && (
-                        <Box sx={{ minWidth: COLUMN_WIDTHS.events, mr: COLUMN_GAP }}>
+                        <Box sx={{ width: COLUMN_WIDTHS.events, minWidth: COLUMN_WIDTHS.events, flexShrink: 0, mr: COLUMN_GAP }}>
                           <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ fontSize: "0.75rem", letterSpacing: "0.05em" }}>
                             EVENTS
                           </Typography>
                         </Box>
                       )}
                       {visibleColumns.duration && (
-                        <Box sx={{ minWidth: COLUMN_WIDTHS.duration, mr: COLUMN_GAP }}>
+                        <Box sx={{ width: COLUMN_WIDTHS.duration, minWidth: COLUMN_WIDTHS.duration, flexShrink: 0, mr: COLUMN_GAP }}>
                           <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ fontSize: "0.75rem", letterSpacing: "0.05em" }}>
                             DURATION
                           </Typography>
                         </Box>
                       )}
                       {visibleColumns.pages && (
-                        <Box sx={{ minWidth: COLUMN_WIDTHS.pages, mr: COLUMN_GAP }}>
+                        <Box sx={{ width: COLUMN_WIDTHS.pages, minWidth: COLUMN_WIDTHS.pages, flexShrink: 0, mr: COLUMN_GAP }}>
                           <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ fontSize: "0.75rem", letterSpacing: "0.05em" }}>
                             PAGES
                           </Typography>
                         </Box>
                       )}
                       {visibleColumns.device && (
-                        <Box sx={{ minWidth: COLUMN_WIDTHS.device, mr: COLUMN_GAP }}>
+                        <Box sx={{ width: COLUMN_WIDTHS.device, minWidth: COLUMN_WIDTHS.device, flexShrink: 0, mr: COLUMN_GAP }}>
                           <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ fontSize: "0.75rem", letterSpacing: "0.05em" }}>
                             DEVICE
                           </Typography>
                         </Box>
                       )}
                       {visibleColumns.location && (
-                        <Box sx={{ minWidth: COLUMN_WIDTHS.location, mr: COLUMN_GAP }}>
+                        <Box sx={{ width: COLUMN_WIDTHS.location, minWidth: COLUMN_WIDTHS.location, flexShrink: 0, mr: COLUMN_GAP }}>
                           <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ fontSize: "0.75rem", letterSpacing: "0.05em" }}>
                             LOCATION
                           </Typography>
                         </Box>
                       )}
                       {visibleColumns.ip && (
-                        <Box sx={{ minWidth: COLUMN_WIDTHS.ip }}>
+                        <Box sx={{ width: COLUMN_WIDTHS.ip, minWidth: COLUMN_WIDTHS.ip, flexShrink: 0 }}>
                           <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ fontSize: "0.75rem", letterSpacing: "0.05em" }}>
                             IP
                           </Typography>
@@ -926,9 +926,9 @@ export default function SessionsPage() {
                             }}
                           >
                             {visibleColumns.user && (
-                              <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: COLUMN_WIDTHS.user, mr: COLUMN_GAP }} onClick={(e) => e.stopPropagation()}>
-                                <PersonOutlineIcon sx={{ fontSize: 18, color: "text.secondary" }} />
-                                <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                              <Box sx={{ display: "flex", alignItems: "center", gap: 1, width: COLUMN_WIDTHS.user, minWidth: COLUMN_WIDTHS.user, maxWidth: COLUMN_WIDTHS.user, flexShrink: 0, mr: COLUMN_GAP, overflow: "hidden" }} onClick={(e) => e.stopPropagation()}>
+                                <PersonOutlineIcon sx={{ fontSize: 18, color: "text.secondary", flexShrink: 0 }} />
+                                <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flexShrink: 0 }}>
                                   <VideocamIcon sx={{ fontSize: 16, color: "text.secondary" }} />
                                   <Typography variant="body2" component="span" sx={{ fontSize: "0.875rem", color: "text.secondary" }}>
                                     {sessionsForUser}
@@ -940,7 +940,7 @@ export default function SessionsPage() {
                                       display: "flex",
                                       alignItems: "center",
                                       gap: 0.5,
-                                      ml: 0.5,
+                                      flexShrink: 0,
                                       "@keyframes pulse": {
                                         "0%": {
                                           opacity: 1,
@@ -979,13 +979,13 @@ export default function SessionsPage() {
                                     </Typography>
                                   </Box>
                                 )}
-                                <Typography variant="body2" noWrap sx={{ fontSize: "0.875rem", maxWidth: 140 }} title={session.sessionId}>
+                                <Typography variant="body2" noWrap sx={{ fontSize: "0.875rem", minWidth: 0, flex: "1 1 auto" }} title={session.sessionId}>
                                   {String(session.sessionId).slice(0, 16)}{session.sessionId.length > 16 ? "…" : ""}
                                 </Typography>
                               </Box>
                             )}
                             {visibleColumns.play && (
-                              <Box sx={{ minWidth: COLUMN_WIDTHS.play, mr: COLUMN_GAP }} onClick={(e) => e.stopPropagation()}>
+                              <Box sx={{ width: COLUMN_WIDTHS.play, minWidth: COLUMN_WIDTHS.play, flexShrink: 0, mr: COLUMN_GAP }} onClick={(e) => e.stopPropagation()}>
                                 <IconButton
                                   size="small"
                                   color="primary"
@@ -1004,15 +1004,15 @@ export default function SessionsPage() {
                               </Box>
                             )}
                             {visibleColumns.date && (
-                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, minWidth: COLUMN_WIDTHS.date, mr: COLUMN_GAP }}>
+                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: COLUMN_WIDTHS.date, minWidth: COLUMN_WIDTHS.date, flexShrink: 0, mr: COLUMN_GAP }}>
                                 <CalendarMonthIcon sx={{ fontSize: 16, color: "text.secondary" }} />
-                                <Typography variant="body2" sx={{ fontSize: "0.875rem" }}>
+                                <Typography variant="body2" noWrap sx={{ fontSize: "0.875rem" }}>
                                   {session.createdAt ? format(new Date(session.createdAt), "MMM d, yy | h:mm a") : "—"}
                                 </Typography>
                               </Box>
                             )}
                             {visibleColumns.events && (
-                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, minWidth: COLUMN_WIDTHS.events, mr: COLUMN_GAP }}>
+                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: COLUMN_WIDTHS.events, minWidth: COLUMN_WIDTHS.events, flexShrink: 0, mr: COLUMN_GAP }}>
                                 <FlagIcon sx={{ fontSize: 16, color: "text.secondary" }} />
                                 <Typography variant="body2" sx={{ fontSize: "0.875rem" }}>
                                   {session.chunkCount ?? 0}
@@ -1020,7 +1020,7 @@ export default function SessionsPage() {
                               </Box>
                             )}
                             {visibleColumns.duration && (
-                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, minWidth: COLUMN_WIDTHS.duration, mr: COLUMN_GAP }}>
+                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: COLUMN_WIDTHS.duration, minWidth: COLUMN_WIDTHS.duration, flexShrink: 0, mr: COLUMN_GAP }}>
                                 <ScheduleIcon sx={{ fontSize: 16, color: "text.secondary" }} />
                                 <Typography variant="body2" sx={{ fontSize: "0.875rem" }}>
                                   {(() => {
@@ -1036,7 +1036,7 @@ export default function SessionsPage() {
                               </Box>
                             )}
                             {visibleColumns.pages && (
-                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, minWidth: COLUMN_WIDTHS.pages, mr: COLUMN_GAP }}>
+                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: COLUMN_WIDTHS.pages, minWidth: COLUMN_WIDTHS.pages, flexShrink: 0, mr: COLUMN_GAP }}>
                                 <TabIcon sx={{ fontSize: 16, color: "text.secondary" }} />
                                 <Typography variant="body2" sx={{ fontSize: "0.875rem" }}>
                                   {session.pageCount ?? 0}
@@ -1044,7 +1044,7 @@ export default function SessionsPage() {
                               </Box>
                             )}
                             {visibleColumns.device && (
-                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, minWidth: COLUMN_WIDTHS.device, mr: COLUMN_GAP }}>
+                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: COLUMN_WIDTHS.device, minWidth: COLUMN_WIDTHS.device, flexShrink: 0, mr: COLUMN_GAP }}>
                                 <DesktopWindowsIcon sx={{ fontSize: 16, color: "text.secondary" }} />
                                 <Typography variant="body2" sx={{ fontSize: "0.875rem" }}>
                                   {parseDevice(session.meta?.userAgent)}
@@ -1055,7 +1055,7 @@ export default function SessionsPage() {
                               </Box>
                             )}
                             {visibleColumns.location && (
-                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, minWidth: COLUMN_WIDTHS.location, mr: COLUMN_GAP }}>
+                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: COLUMN_WIDTHS.location, minWidth: COLUMN_WIDTHS.location, flexShrink: 0, mr: COLUMN_GAP }}>
                                 {loc.flag && (
                                   <Typography component="span" sx={{ fontSize: "1rem", lineHeight: 1 }}>
                                     {loc.flag}
@@ -1067,8 +1067,8 @@ export default function SessionsPage() {
                               </Box>
                             )}
                             {visibleColumns.ip && (
-                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, minWidth: COLUMN_WIDTHS.ip }}>
-                                <Typography variant="body2" sx={{ fontFamily: "monospace", fontSize: "0.875rem" }} title={session.ipAddress || ""}>
+                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: COLUMN_WIDTHS.ip, minWidth: COLUMN_WIDTHS.ip, flexShrink: 0 }}>
+                                <Typography variant="body2" noWrap sx={{ fontFamily: "monospace", fontSize: "0.875rem" }} title={session.ipAddress || ""}>
                                   {session.ipAddress || "—"}
                                 </Typography>
                               </Box>

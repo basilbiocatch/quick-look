@@ -180,24 +180,44 @@ export class GcsAdapter {
   /**
    * Get total storage bytes per owner by scanning bucket and summing by metadata.owner.
    * Used by the cost calculation job.
+   * Only objects with custom metadata.owner are counted; objects without it are skipped.
    * @returns {Promise<Map<string, number>>} ownerId -> total bytes
    */
   async getStorageByOwner() {
     const byOwner = new Map();
     const [files] = await this.bucket.getFiles({ autoPaginate: true });
+    logger.info("StorageCost: GCS bucket listed", {
+      bucket: this.bucketName,
+      fileCount: files.length,
+    });
+    let withOwner = 0;
+    let withoutOwner = 0;
+    let totalBytesWithOwner = 0;
     for (const file of files) {
       try {
         const [metadata] = await file.getMetadata();
         const size = parseInt(metadata.size || "0", 10);
         const owner = metadata.metadata?.owner;
         if (owner) {
+          withOwner++;
+          totalBytesWithOwner += size;
           const current = byOwner.get(owner) || 0;
           byOwner.set(owner, current + size);
+        } else {
+          withoutOwner++;
         }
       } catch (_) {
         // Skip files that fail metadata read
       }
     }
+    logger.info("StorageCost: GCS bucket scan", {
+      bucket: this.bucketName,
+      totalFiles: files.length,
+      filesWithOwner: withOwner,
+      filesWithoutOwner: withoutOwner,
+      totalBytesAttributed: totalBytesWithOwner,
+      ownerCount: byOwner.size,
+    });
     return byOwner;
   }
 }

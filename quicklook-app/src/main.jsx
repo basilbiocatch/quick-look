@@ -10,7 +10,8 @@ import App from "./App";
 
 initQuicklookWebsite();
 
-ReactDOM.createRoot(document.getElementById("root")).render(
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(
   <React.StrictMode>
     <ThemeProvider theme={darkTheme}>
       <CssBaseline />
@@ -22,3 +23,10 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     </ThemeProvider>
   </React.StrictMode>
 );
+
+// Prevent FOUC: show body only after first paint with styles (MUI/Emotion inject on render)
+requestAnimationFrame(() => {
+  requestAnimationFrame(() => {
+    document.body.style.visibility = "visible";
+  });
+});

@@ -139,9 +139,27 @@ export default function HomePage() {
                       <Typography variant="subtitle1" fontWeight={600} noWrap>
                         {project.name}
                       </Typography>
-                      <Typography variant="caption" color="text.secondary" noWrap display="block">
+                      <Box
+                        component="span"
+                        title={project.projectKey}
+                        sx={{
+                          display: "inline-block",
+                          mt: 0.5,
+                          px: 1,
+                          py: 0.25,
+                          borderRadius: 1,
+                          bgcolor: "action.hover",
+                          fontFamily: "monospace",
+                          fontSize: "0.6875rem",
+                          color: "text.secondary",
+                          maxWidth: "100%",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
                         {project.projectKey}
-                      </Typography>
+                      </Box>
                     </CardContent>
                   </CardActionArea>
                 </Card>

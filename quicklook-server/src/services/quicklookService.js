@@ -168,8 +168,15 @@ export const QuicklookService = {
     const session = await QuicklookSession.findOne({ sessionId }).select("projectKey");
     if (!session) throw new Error("Session not found");
     const project = await QuicklookProject.findOne({ projectKey: session.projectKey }).select("owner");
+    const owner = project?.owner != null ? String(project.owner) : undefined;
+    if (CHUNK_STORAGE_BACKEND === "gcs" && !owner) {
+      logger.warn("quicklook saveChunk: no project or owner — GCS object will have no owner metadata (storage cost will not be attributed)", {
+        sessionId: sessionId?.slice(0, 8),
+        projectKey: session.projectKey,
+      });
+    }
     await chunkStorage.saveChunk(sessionId, index, events, {
-      owner: project?.owner,
+      owner,
       projectKey: session.projectKey,
     });
     const sessionDoc = await QuicklookSession.findOne({ sessionId });
@@ -252,24 +259,67 @@ export const QuicklookService = {
       if (from) query.createdAt.$gte = new Date(from);
       if (to) query.createdAt.$lte = new Date(to);
     }
-    const total = await QuicklookSession.countDocuments(query);
-    const data = await QuicklookSession.find(query)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(Math.min(limit, 200))
-      .lean();
 
-    const now = Date.now();
+    const now = new Date();
+    const [countResult, statsResult, data] = await Promise.all([
+      QuicklookSession.countDocuments(query),
+      QuicklookSession.aggregate([
+        { $match: query },
+        {
+          $project: {
+            userKey: { $ifNull: ["$user.email", "$sessionId"] },
+            computedDuration: {
+              $cond: [
+                { $eq: ["$status", "closed"] },
+                { $ifNull: ["$duration", 0] },
+                { $subtract: [now, "$createdAt"] },
+              ],
+            },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            uniqueUsers: { $addToSet: "$userKey" },
+            totalDuration: { $sum: "$computedDuration" },
+            count: { $sum: 1 },
+          },
+        },
+        {
+          $project: {
+            uniqueUsers: { $size: "$uniqueUsers" },
+            avgDurationMs: { $round: [{ $divide: ["$totalDuration", "$count"] }, 0] },
+          },
+        },
+      ]),
+      QuicklookSession.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Math.min(limit, 200))
+        .lean(),
+    ]);
+
+    const total = countResult;
+    const stats = statsResult[0] || { uniqueUsers: 0, avgDurationMs: 0 };
+    const sessionNow = Date.now();
     for (const session of data) {
       if (session.status === "active" && session.createdAt) {
         const createdAt = session.createdAt instanceof Date
           ? session.createdAt.getTime()
           : new Date(session.createdAt).getTime();
-        session.duration = now - createdAt;
+        session.duration = sessionNow - createdAt;
       }
     }
 
-    return { success: true, data, total, limit, skip };
+    return {
+      success: true,
+      data,
+      total,
+      limit,
+      skip,
+      uniqueUsers: stats.uniqueUsers,
+      avgDurationMs: stats.avgDurationMs,
+    };
   },
 
   async getSessionById(sessionId) {
