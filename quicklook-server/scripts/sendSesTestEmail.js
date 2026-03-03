@@ -19,7 +19,7 @@ import "dotenv/config";
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 
 const FROM = process.env.SES_FROM || "noreply@quicklook.io";
-const TO = "basil@nobexinc.com";
+const TO = process.env.SES_TEST_TO;
 const REGION = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION;
 
 async function main() {

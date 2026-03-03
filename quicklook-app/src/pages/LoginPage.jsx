@@ -8,6 +8,8 @@ import {
   Button,
   Alert,
   Link as MuiLink,
+  FormControlLabel,
+  Checkbox,
 } from "@mui/material";
 import { useAuth } from "../contexts/AuthContext";
 import { getPublicAssetUrl } from "../utils/baseUrl";
@@ -15,6 +17,7 @@ import { getPublicAssetUrl } from "../utils/baseUrl";
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(true);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const { login, user } = useAuth();
@@ -31,7 +34,7 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
     setSubmitting(true);
-    const result = await login({ email: email.trim(), password });
+    const result = await login({ email: email.trim(), password, remember });
     setSubmitting(false);
     if (result.success) {
       navigate(from, { replace: true });
@@ -95,7 +98,19 @@ export default function LoginPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            sx={{ mb: 3 }}
+            sx={{ mb: 1.5 }}
+          />
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+                color="primary"
+                size="small"
+              />
+            }
+            label="Remember me"
+            sx={{ mb: 2, "& .MuiFormControlLabel-label": { fontSize: "0.875rem" } }}
           />
           <Button
             type="submit"
@@ -103,10 +118,15 @@ export default function LoginPage() {
             variant="contained"
             size="large"
             disabled={submitting}
-            sx={{ py: 1.5, mb: 2 }}
+            sx={{ py: 1.5, mb: 1 }}
           >
             {submitting ? "Signing in…" : "Sign in"}
           </Button>
+          <Typography variant="body2" color="text.secondary" textAlign="center" sx={{ mb: 2 }}>
+            <MuiLink component={Link} to="/forgot-password" color="primary" underline="hover">
+              Forgot password?
+            </MuiLink>
+          </Typography>
           <Typography variant="body2" color="text.secondary" textAlign="center">
             Don&apos;t have an account?{" "}
             <MuiLink component={Link} to="/signup" color="primary" underline="hover">

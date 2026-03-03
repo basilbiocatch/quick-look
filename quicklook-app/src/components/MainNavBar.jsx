@@ -20,6 +20,7 @@ import FolderIcon from "@mui/icons-material/Folder";
 import AddIcon from "@mui/icons-material/Add";
 import CheckIcon from "@mui/icons-material/Check";
 import HomeIcon from "@mui/icons-material/Home";
+import PersonIcon from "@mui/icons-material/Person";
 import { getProjects } from "../api/quicklookApi";
 import { getPublicAssetUrl } from "../utils/baseUrl";
 
@@ -75,6 +76,7 @@ export default function MainNavBar() {
   const isAbTestsActive = Boolean(routeProjectKey && pathname.includes("/ab-tests"));
   const isAccuracyActive = Boolean(routeProjectKey && pathname.includes("/accuracy"));
   const isSettingsActive = pathname.includes("/settings");
+  const isAccountActive = pathname === "/account";
 
   const selectedProject = projectKey ? projects.find((p) => p.projectKey === projectKey) : null;
   const projectInitial = selectedProject?.name ? selectedProject.name.trim().charAt(0).toUpperCase() : null;
@@ -343,6 +345,26 @@ export default function MainNavBar() {
                 {projectInitial}
               </Box>
             )}
+          </IconButton>
+        </Tooltip>
+      </Box>
+
+      {/* Account - at bottom */}
+      <Box sx={{ display: "flex", justifyContent: "center", py: 0.5 }}>
+        <Tooltip title="Account" placement="right">
+          <IconButton
+            onClick={() => navigate("/account")}
+            sx={{
+              ...iconButtonSx,
+              ...(isAccountActive && {
+                color: "#fff",
+                bgcolor: "rgba(255,255,255,0.18)",
+                "&:hover": { bgcolor: "rgba(255,255,255,0.22)" },
+              }),
+              "& .MuiSvgIcon-root": { fontSize: 24 },
+            }}
+          >
+            <PersonIcon sx={{ fontSize: 24 }} />
           </IconButton>
         </Tooltip>
       </Box>

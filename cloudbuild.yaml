@@ -39,8 +39,10 @@ steps:
       - "--allow-unauthenticated"
       # Update only these vars so existing QUICKLOOK_DB and JWT_SECRET (set in Console or via gcloud) are preserved.
       # First deploy: set QUICKLOOK_DB and JWT_SECRET in Console or: gcloud run services update quicklook-server --region=... --update-env-vars=QUICKLOOK_DB=...,JWT_SECRET=...
+      # AWS_SECRET_ACCESS_KEY from Secret Manager (create once: quicklook-server/scripts/setup-aws-secret.sh).
       - "--update-env-vars"
-      - "CHUNK_STORAGE=gcs,GCS_BUCKET=quicklook-chunks,GCP_PROJECT_ID=${PROJECT_ID}"
+      - "CHUNK_STORAGE=gcs,GCS_BUCKET=quicklook-chunks,GCP_PROJECT_ID=${PROJECT_ID},AWS_ACCESS_KEY_ID=AKIAJFGG6OFLTWBHBUZQ,AWS_REGION=us-east-1,SES_FROM=noreply@quicklook.io"
+      - "--set-secrets=AWS_SECRET_ACCESS_KEY=aws-secret-access-key:latest"
     id: "deploy"
     waitFor: ["push"]
 

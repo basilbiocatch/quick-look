@@ -88,6 +88,9 @@ export default function HomePage() {
             anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
             transformOrigin={{ vertical: "top", horizontal: "right" }}
           >
+            <MenuItem onClick={() => { setMenuAnchor(null); navigate("/account"); }}>
+              Account
+            </MenuItem>
             <MenuItem onClick={handleLogout}>Sign out</MenuItem>
           </Menu>
         </Box>

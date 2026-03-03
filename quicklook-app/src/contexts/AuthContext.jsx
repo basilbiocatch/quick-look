@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { getAuthToken, setAuthToken, getMe, login as apiLogin, register as apiRegister } from "../api/authApi.js";
+import { getAuthToken, setAuthToken, getMe, login as apiLogin, register as apiRegister, resendVerificationEmail as apiResendVerification } from "../api/authApi.js";
 
 const AuthContext = createContext(null);
+
+const FREE_PLAN_VERIFICATION_GRACE_DAYS = 2;
 
 function userFromData(data) {
   if (!data) return null;
@@ -10,7 +12,19 @@ function userFromData(data) {
     email: data.email,
     name: data.name || "",
     sessionCap: data.sessionCap ?? null,
+    plan: data.plan || "free",
+    emailVerified: Boolean(data.emailVerified),
+    createdAt: data.createdAt || null,
   };
+}
+
+export function needsEmailVerification(user) {
+  if (!user || user.emailVerified) return false;
+  if (user.plan && user.plan !== "free") return false;
+  const createdAt = user.createdAt ? new Date(user.createdAt) : null;
+  if (!createdAt) return false;
+  const cutoff = new Date(Date.now() - FREE_PLAN_VERIFICATION_GRACE_DAYS * 24 * 60 * 60 * 1000);
+  return createdAt < cutoff;
 }
 
 export function AuthProvider({ children }) {
@@ -53,7 +67,8 @@ export function AuthProvider({ children }) {
       const token = res.data?.token;
       const userData = res.data?.user;
       if (token && userData) {
-        setAuthToken(token);
+        const remember = credentials.remember !== false;
+        setAuthToken(token, remember);
         setUser(userFromData(userData));
         return { success: true };
       }
@@ -80,11 +95,20 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(() => {
-    setAuthToken(null);
+    setAuthToken(null, false);
     setUser(null);
   }, []);
 
-  const value = { user, loading, login, signup, logout, loadUser };
+  const resendVerification = useCallback(async () => {
+    try {
+      await apiResendVerification();
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.response?.data?.error || err.message || "Failed to send" };
+    }
+  }, []);
+
+  const value = { user, loading, login, signup, logout, loadUser, resendVerification };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

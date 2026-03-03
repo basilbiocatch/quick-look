@@ -16,6 +16,13 @@ const userSchema = new mongoose.Schema(
     storageCostUsd: { type: Number, default: 0 },
     /** Last time cost was updated by the cost job */
     lastCostUpdate: { type: Date },
+    /** Email verification (required after 2 days on free plan) */
+    emailVerified: { type: Boolean, default: false },
+    emailVerificationToken: { type: String },
+    emailVerificationTokenExpires: { type: Date },
+    /** Forgot password flow */
+    resetPasswordToken: { type: String },
+    resetPasswordExpires: { type: Date },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
   },

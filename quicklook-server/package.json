@@ -7,7 +7,8 @@
     "start": "node src/app.js",
     "dev": "node --watch src/app.js",
     "seed:localinteractive": "node scripts/seedLocalInteractiveProject.js",
-    "email:test": "node scripts/sendSesTestEmail.js"
+    "email:test": "node scripts/sendSesTestEmail.js",
+    "seed:verified": "node scripts/seedExistingUsersVerified.js"
   },
   "dependencies": {
     "@aws-sdk/client-ses": "^3.700.0",

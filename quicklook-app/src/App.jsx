@@ -9,10 +9,15 @@ import HomePage from "./pages/HomePage";
 import MarketingHomePage from "./pages/MarketingHomePage";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
+import VerifyEmailPage from "./pages/VerifyEmailPage";
+import AccountPage from "./pages/AccountPage";
 import NewProjectPage from "./pages/NewProjectPage";
 import ProjectSettingsPage from "./pages/ProjectSettingsPage";
 import ProtectedRoute from "./components/ProtectedRoute";
 import MainNavBar, { NAV_WIDTH } from "./components/MainNavBar";
+import VerificationBanner from "./components/VerificationBanner";
 import { Box, CircularProgress } from "@mui/material";
 import { useState, useEffect } from "react";
 import { useAuth } from "./contexts/AuthContext";
@@ -129,8 +134,11 @@ function AppLayout() {
   return (
     <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: "background.default" }}>
       <MainNavBar />
-      <Box component="main" sx={{ flex: 1, minWidth: 0, marginLeft: `${NAV_WIDTH}px` }}>
-        <Outlet />
+      <Box component="main" sx={{ flex: 1, minWidth: 0, marginLeft: `${NAV_WIDTH}px`, display: "flex", flexDirection: "column" }}>
+        <VerificationBanner />
+        <Box sx={{ flex: 1, minHeight: 0 }}>
+          <Outlet />
+        </Box>
       </Box>
     </Box>
   );
@@ -167,8 +175,12 @@ function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/" element={<RootLayout />}>
           <Route index element={<HomePage />} />
+          <Route path="account" element={<AccountPage />} />
           <Route path="projects/new" element={<NewProjectPage />} />
           <Route
             path="projects/:projectKey/sessions"

@@ -403,7 +403,19 @@ ${setupSnippet}`
         )}
         {aiSummary && !summaryLoading && (
           <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-            <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>{aiSummary.narrative}</Typography>
+            <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>{(() => {
+              const raw = aiSummary.narrative;
+              if (raw == null) return "—";
+              if (typeof raw !== "string") return String(raw);
+              const s = raw.trim();
+              if (s.startsWith("{") && s.includes('"narrative"')) {
+                try {
+                  const parsed = JSON.parse(s);
+                  if (parsed && typeof parsed.narrative === "string") return parsed.narrative;
+                } catch (_) { /* ignore */ }
+              }
+              return raw;
+            })()}</Typography>
             <PropertyRow label="Intent" value={aiSummary.intent || "—"} />
             <PropertyRow label="Emotional score" value={aiSummary.emotionalScore != null ? `${aiSummary.emotionalScore}/10` : "—"} />
             {aiSummary.keyMoment && <PropertyRow label="Key moment" value={aiSummary.keyMoment} />}

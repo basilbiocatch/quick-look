@@ -60,11 +60,11 @@ def _parse_summary_response(raw: str) -> dict[str, Any] | None:
             return obj
         except json.JSONDecodeError:
             pass
-    # Fallback: extract fields with regex
+    # Fallback: extract fields with regex (allow newlines in string values)
     out = {}
     for key in ("narrative", "keyMoment", "dropOffReason", "intent"):
         pat = rf'"{key}"\s*:\s*"((?:[^"\\]|\\.)*)"'
-        m = re.search(pat, raw, re.I)
+        m = re.search(pat, raw, re.I | re.DOTALL)
         if m:
             out[key] = m.group(1).replace("\\n", " ").replace('\\"', '"').strip()[:500]
     em = re.search(r'"emotionalScore"\s*:\s*(\d+)', raw, re.I)
