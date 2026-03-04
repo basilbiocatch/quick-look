@@ -1,6 +1,6 @@
 "use strict";
 
-import { QuicklookService } from "../services/quicklookService.js";
+import { QuicklookService, hasReachedSessionCap } from "../services/quicklookService.js";
 import QuicklookProject from "../models/quicklookProjectModel.js";
 import { generateId, generateApiKey } from "../models/quicklookProjectModel.js";
 import { getRealClientIP } from "../utils/getRealClientIP.js";
@@ -137,9 +137,42 @@ export const getEvents = async (req, res) => {
     const project = await getProjectForUser(session.projectKey, req.user.userId, res);
     if (!project) return;
     const result = await QuicklookService.getSessionEvents(sessionId);
+    
+    // Log response size for compression monitoring
+    const jsonString = JSON.stringify(result);
+    const uncompressedSize = Buffer.byteLength(jsonString, 'utf8');
+    logger.info("quicklook getEvents", {
+      sessionId: sessionId?.slice(0, 8),
+      eventCount: result.events?.length || 0,
+      uncompressedSize: `${(uncompressedSize / 1024).toFixed(2)} KB`,
+      uncompressedChars: jsonString.length,
+    });
+    
     return res.json(result);
   } catch (err) {
     logger.error("quicklook getEvents", { error: err.message });
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+/** Fetch a batch of chunks for progressive loading. Query: start=0, limit=5 */
+export const getSessionChunks = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const start = Math.max(0, parseInt(req.query.start, 10) || 0);
+    const limit = Math.min(20, Math.max(1, parseInt(req.query.limit, 10) || 5));
+
+    const session = await QuicklookService.getSessionById(sessionId);
+    if (!session) {
+      return res.status(404).json({ success: false, error: "Session not found" });
+    }
+    const project = await getProjectForUser(session.projectKey, req.user.userId, res);
+    if (!project) return;
+
+    const result = await QuicklookService.getSessionChunksBatch(sessionId, start, limit);
+    return res.json(result);
+  } catch (err) {
+    logger.error("quicklook getSessionChunks", { error: err.message });
     return res.status(500).json({ success: false, error: err.message });
   }
 };
@@ -250,11 +283,22 @@ export const createProject = async (req, res) => {
     if (!name || typeof name !== "string" || !name.trim()) {
       return res.status(400).json({ success: false, error: "name is required" });
     }
-    // Get user's plan to determine retention days
     const user = await User.findById(req.user.userId).select("plan").lean();
     const userPlan = user?.plan || "free";
     const retentionDays = getRetentionDaysByPlan(userPlan);
-    
+
+    const projectLimit = userPlan === "pro" ? null : 1;
+    if (projectLimit !== null) {
+      const count = await QuicklookProject.countDocuments({ owner: req.user.userId });
+      if (count >= projectLimit) {
+        return res.status(403).json({
+          success: false,
+          error: "Project limit reached. Upgrade to Pro for unlimited projects.",
+          code: "PROJECT_LIMIT_REACHED",
+        });
+      }
+    }
+
     const projectId = generateId();
     const projectKey = generateId();
     const apiKey = generateApiKey();
@@ -311,6 +355,13 @@ export const deleteProject = async (req, res) => {
 /** Proxy to analytics: ensure session has AI summary (on-demand). Requires auth; session must belong to user's project. */
 export const ensureSummary = async (req, res) => {
   try {
+    if (await hasReachedSessionCap(req.user.userId)) {
+      return res.status(402).json({
+        success: false,
+        error: "Session limit reached for this billing period. Upgrade to Pro for 5,000 sessions/month.",
+        code: "SESSION_CAP_REACHED",
+      });
+    }
     const { sessionId } = req.params;
     const session = await QuicklookService.getSessionById(sessionId);
     if (!session) {
@@ -341,6 +392,13 @@ export const ensureSummary = async (req, res) => {
 /** Proxy to analytics: ensure session friction points have root cause (on-demand). */
 export const ensureRootCause = async (req, res) => {
   try {
+    if (await hasReachedSessionCap(req.user.userId)) {
+      return res.status(402).json({
+        success: false,
+        error: "Session limit reached for this billing period. Upgrade to Pro for 5,000 sessions/month.",
+        code: "SESSION_CAP_REACHED",
+      });
+    }
     const { sessionId } = req.params;
     const session = await QuicklookService.getSessionById(sessionId);
     if (!session) {

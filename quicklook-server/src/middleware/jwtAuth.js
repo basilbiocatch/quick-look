@@ -27,15 +27,47 @@ export async function requireAuth(req, res, next) {
   }
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    const user = await User.findById(decoded.userId).select("email sessionCap").lean();
+    const user = await User.findById(decoded.userId).select("email sessionCap plan role").lean();
     if (!user) {
       return res.status(401).json({ success: false, error: "Unauthorized" });
     }
-    req.user = { userId: decoded.userId, email: user.email, sessionCap: user.sessionCap };
+    req.user = {
+      userId: decoded.userId,
+      email: user.email,
+      sessionCap: user.sessionCap,
+      plan: user.plan || "free",
+      role: user.role || "user",
+    };
     next();
   } catch (err) {
     return res.status(401).json({ success: false, error: "Unauthorized" });
   }
+}
+
+/**
+ * Optional auth: set req.user when Authorization Bearer token is valid.
+ * Does not 401 when token is missing or invalid; req.user is left unset.
+ * Use on public routes that benefit from user context (e.g. GET /api/config/plans).
+ */
+export async function optionalAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  if (!token) return next();
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await User.findById(decoded.userId).select("email sessionCap plan role").lean();
+    if (!user) return next();
+    req.user = {
+      userId: decoded.userId,
+      email: user.email,
+      sessionCap: user.sessionCap,
+      plan: user.plan || "free",
+      role: user.role || "user",
+    };
+  } catch {
+    // ignore invalid/expired token
+  }
+  next();
 }
 
 /**

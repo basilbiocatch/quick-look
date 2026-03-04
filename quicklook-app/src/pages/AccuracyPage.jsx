@@ -20,11 +20,14 @@ import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import Button from "@mui/material/Button";
 import PsychologyIcon from "@mui/icons-material/Psychology";
+import { useAuth } from "../contexts/AuthContext";
+import ProFeatureGate from "../components/ProFeatureGate";
 import { getAccuracyMetrics, postModelsRetrain } from "../api/quicklookApi";
 
 export default function AccuracyPage() {
   const { projectKey } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -54,6 +57,15 @@ export default function AccuracyPage() {
     }
     fetchMetrics();
   }, [projectKey, fetchMetrics, navigate]);
+
+  if (user?.plan !== "pro") {
+    return (
+      <ProFeatureGate
+        title="Accuracy"
+        description="Model accuracy metrics and retraining. Upgrade to Pro to access."
+      />
+    );
+  }
 
   const handleRetrain = () => {
     setRetraining(true);

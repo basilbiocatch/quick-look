@@ -282,6 +282,7 @@ export default function DevToolsPanel({ open, onClose, events }) {
   return (
     <Slide direction="up" in={open} mountOnEnter unmountOnExit timeout={300}>
       <Box
+        data-ql-block
         sx={{
           position: "absolute",
           bottom: 0,

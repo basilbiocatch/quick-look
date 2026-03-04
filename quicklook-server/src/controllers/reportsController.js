@@ -2,6 +2,7 @@
 
 import QuicklookReport from "../models/quicklookReportModel.js";
 import QuicklookProject from "../models/quicklookProjectModel.js";
+import { hasReachedSessionCap } from "../services/quicklookService.js";
 import logger from "../configs/loggingConfig.js";
 
 async function getProjectForUser(projectKey, userId, res) {
@@ -62,6 +63,13 @@ export const getReportById = async (req, res) => {
 /** POST /reports/generate - proxy to analytics. Body or query: projectKey, type=weekly|daily|monthly */
 export const postReportsGenerate = async (req, res) => {
   try {
+    if (await hasReachedSessionCap(req.user.userId)) {
+      return res.status(402).json({
+        success: false,
+        error: "Session limit reached for this billing period. Upgrade to Pro for 5,000 sessions/month.",
+        code: "SESSION_CAP_REACHED",
+      });
+    }
     const projectKey = (req.body?.projectKey ?? req.query?.projectKey ?? "").toString().trim();
     if (!projectKey) {
       return res.status(400).json({

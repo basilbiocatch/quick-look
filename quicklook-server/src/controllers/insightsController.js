@@ -2,6 +2,7 @@
 
 import QuicklookInsight from "../models/quicklookInsightModel.js";
 import QuicklookProject from "../models/quicklookProjectModel.js";
+import { hasReachedSessionCap } from "../services/quicklookService.js";
 import logger from "../configs/loggingConfig.js";
 
 /** Ensure user owns the project; if not, send 404/403 and return null. */
@@ -111,6 +112,13 @@ export const patchInsight = async (req, res) => {
 /** POST /insights/generate - proxy to analytics. Body or query: projectKey. */
 export const postInsightsGenerate = async (req, res) => {
   try {
+    if (await hasReachedSessionCap(req.user.userId)) {
+      return res.status(402).json({
+        success: false,
+        error: "Session limit reached for this billing period. Upgrade to Pro for 5,000 sessions/month.",
+        code: "SESSION_CAP_REACHED",
+      });
+    }
     const projectKey = (req.body?.projectKey ?? req.query?.projectKey ?? "").toString().trim();
     if (!projectKey) {
       return res.status(400).json({

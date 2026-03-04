@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Box,
   Paper,
@@ -13,7 +14,8 @@ import { changePassword } from "../api/authApi";
 const MIN_PASSWORD_LENGTH = 8;
 
 export default function AccountPage() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -118,6 +120,20 @@ export default function AccountPage() {
           </Button>
         </Box>
       </Paper>
+
+      <Box sx={{ mt: 3, pt: 2, borderTop: "1px solid", borderColor: "divider" }}>
+        <Button
+          variant="outlined"
+          color="inherit"
+          onClick={() => {
+            logout();
+            navigate("/login", { replace: true });
+          }}
+          sx={{ textTransform: "none" }}
+        >
+          Sign out
+        </Button>
+      </Box>
     </Box>
   );
 }

@@ -1,4 +1,5 @@
 import { getSessionId, getApiUrl, shouldRotateSession, rotateSession } from "./session.js";
+import { isPausedByActivity } from "./activity.js";
 import pako from "pako";
 
 const FLUSH_INTERVAL_MS = 5000;
@@ -34,6 +35,8 @@ function persistChunkIndex() {
 
 function scheduleFlush() {
   if (flushTimer) return;
+  // Don't schedule flushes when paused
+  if (isPausedByActivity()) return;
   flushTimer = setTimeout(doFlush, FLUSH_INTERVAL_MS);
 }
 
@@ -88,7 +91,11 @@ async function doFlush() {
   } else {
     sendChunkDirect(index, events);
   }
-  scheduleFlush();
+  
+  // Only reschedule if not paused (e.g. page is visible)
+  if (!isPausedByActivity()) {
+    scheduleFlush();
+  }
 }
 
 function uint8ArrayToBase64(uint8) {
@@ -179,6 +186,11 @@ export function setWorkerUrl(url) {
 }
 
 export function pushEvent(ev) {
+  // Don't push events when paused
+  if (isPausedByActivity()) {
+    return;
+  }
+  
   eventBuffer.push(ev);
   if (ev && ev.type === 2) {
     scheduleFirstChunkFlush();

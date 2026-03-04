@@ -566,6 +566,92 @@
     }
   }
 
+  // src/activity.js
+  var inactivityTimer = null;
+  var isPaused = false;
+  var inactivityTimeout = 5 * 60 * 1e3;
+  var pauseOnHidden = true;
+  var activityListenersAttached = false;
+  var pauseCallback = null;
+  var resumeCallback = null;
+  function setActivityCallbacks(onPause, onResume) {
+    pauseCallback = onPause;
+    resumeCallback = onResume;
+  }
+  function setActivityConfig(config) {
+    if (config.inactivityTimeout !== void 0) {
+      inactivityTimeout = config.inactivityTimeout;
+    }
+    if (config.pauseOnHidden !== void 0) {
+      pauseOnHidden = config.pauseOnHidden;
+    }
+  }
+  function isPausedByActivity() {
+    return isPaused;
+  }
+  function pauseRecording() {
+    if (isPaused) return;
+    isPaused = true;
+    if (pauseCallback) pauseCallback();
+  }
+  function resumeRecording() {
+    if (!isPaused) return;
+    isPaused = false;
+    if (resumeCallback) resumeCallback();
+  }
+  function resetInactivityTimer() {
+    if (inactivityTimer) clearTimeout(inactivityTimer);
+    if (isPaused || inactivityTimeout <= 0) return;
+    inactivityTimer = setTimeout(() => {
+      pauseRecording();
+    }, inactivityTimeout);
+  }
+  function handleVisibilityChange() {
+    if (!pauseOnHidden) return;
+    if (typeof document !== "undefined" && document.hidden) {
+      pauseRecording();
+    } else {
+      if (isPaused) {
+        resumeRecording();
+      }
+      resetInactivityTimer();
+    }
+  }
+  function handleUserActivity() {
+    if (typeof document !== "undefined" && document.hidden) return;
+    if (isPaused) {
+      resumeRecording();
+    }
+    resetInactivityTimer();
+  }
+  function startActivityMonitoring() {
+    if (activityListenersAttached || typeof window === "undefined" || typeof document === "undefined") return;
+    activityListenersAttached = true;
+    if (pauseOnHidden) {
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+    }
+    if (inactivityTimeout > 0) {
+      const activityEvents = ["mousedown", "keydown", "scroll", "touchstart"];
+      activityEvents.forEach((event) => {
+        document.addEventListener(event, handleUserActivity, { passive: true });
+      });
+      resetInactivityTimer();
+    }
+  }
+  function stopActivityMonitoring() {
+    if (!activityListenersAttached || typeof document === "undefined") return;
+    activityListenersAttached = false;
+    if (inactivityTimer) {
+      clearTimeout(inactivityTimer);
+      inactivityTimer = null;
+    }
+    document.removeEventListener("visibilitychange", handleVisibilityChange);
+    const activityEvents = ["mousedown", "keydown", "scroll", "touchstart"];
+    activityEvents.forEach((event) => {
+      document.removeEventListener(event, handleUserActivity);
+    });
+  }
+
   // node_modules/pako/dist/pako.esm.mjs
   var Z_FIXED$1 = 4;
   var Z_BINARY = 0;
@@ -4792,6 +4878,7 @@
   }
   function scheduleFlush() {
     if (flushTimer) return;
+    if (isPausedByActivity()) return;
     flushTimer = setTimeout(doFlush, FLUSH_INTERVAL_MS);
   }
   function scheduleFirstChunkFlush() {
@@ -4840,7 +4927,9 @@
     } else {
       sendChunkDirect(index2, events);
     }
-    scheduleFlush();
+    if (!isPausedByActivity()) {
+      scheduleFlush();
+    }
   }
   function uint8ArrayToBase64(uint8) {
     const chunk = 8192;
@@ -4925,6 +5014,9 @@
     workerUrl = url;
   }
   function pushEvent3(ev) {
+    if (isPausedByActivity()) {
+      return;
+    }
     eventBuffer.push(ev);
     if (ev && ev.type === 2) {
       scheduleFirstChunkFlush();
@@ -17296,89 +17388,6 @@
   }
   async function ensureSessionStarted() {
     return await startSession();
-  }
-
-  // src/activity.js
-  var inactivityTimer = null;
-  var isPaused = false;
-  var inactivityTimeout = 5 * 60 * 1e3;
-  var pauseOnHidden = true;
-  var activityListenersAttached = false;
-  var pauseCallback = null;
-  var resumeCallback = null;
-  function setActivityCallbacks(onPause, onResume) {
-    pauseCallback = onPause;
-    resumeCallback = onResume;
-  }
-  function setActivityConfig(config) {
-    if (config.inactivityTimeout !== void 0) {
-      inactivityTimeout = config.inactivityTimeout;
-    }
-    if (config.pauseOnHidden !== void 0) {
-      pauseOnHidden = config.pauseOnHidden;
-    }
-  }
-  function pauseRecording() {
-    if (isPaused) return;
-    isPaused = true;
-    if (pauseCallback) pauseCallback();
-  }
-  function resumeRecording() {
-    if (!isPaused) return;
-    isPaused = false;
-    if (resumeCallback) resumeCallback();
-  }
-  function resetInactivityTimer() {
-    if (inactivityTimer) clearTimeout(inactivityTimer);
-    if (isPaused || inactivityTimeout <= 0) return;
-    inactivityTimer = setTimeout(() => {
-      pauseRecording();
-    }, inactivityTimeout);
-  }
-  function handleVisibilityChange() {
-    if (!pauseOnHidden) return;
-    if (typeof document !== "undefined" && document.hidden) {
-      pauseRecording();
-    } else {
-      if (isPaused) {
-        resumeRecording();
-      }
-      resetInactivityTimer();
-    }
-  }
-  function handleUserActivity() {
-    if (typeof document !== "undefined" && document.hidden) return;
-    if (isPaused) {
-      resumeRecording();
-    }
-    resetInactivityTimer();
-  }
-  function startActivityMonitoring() {
-    if (activityListenersAttached || typeof window === "undefined" || typeof document === "undefined") return;
-    activityListenersAttached = true;
-    if (pauseOnHidden) {
-      document.addEventListener("visibilitychange", handleVisibilityChange);
-    }
-    if (inactivityTimeout > 0) {
-      const activityEvents = ["mousedown", "keydown", "scroll", "touchstart"];
-      activityEvents.forEach((event) => {
-        document.addEventListener(event, handleUserActivity, { passive: true });
-      });
-      resetInactivityTimer();
-    }
-  }
-  function stopActivityMonitoring() {
-    if (!activityListenersAttached || typeof document === "undefined") return;
-    activityListenersAttached = false;
-    if (inactivityTimer) {
-      clearTimeout(inactivityTimer);
-      inactivityTimer = null;
-    }
-    document.removeEventListener("visibilitychange", handleVisibilityChange);
-    const activityEvents = ["mousedown", "keydown", "scroll", "touchstart"];
-    activityEvents.forEach((event) => {
-      document.removeEventListener(event, handleUserActivity);
-    });
   }
 
   // src/init.js

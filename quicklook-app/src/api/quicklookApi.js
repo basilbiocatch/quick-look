@@ -16,6 +16,35 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+const DEVICE_ID_STORAGE_KEY = "ql_device_id";
+
+/**
+ * Get or create a stable device ID (QL device-id mechanism).
+ * Cached in localStorage so the same browser keeps the same ID for pricing experiments and session correlation.
+ * @returns {Promise<string>} deviceId
+ */
+export async function getOrCreateDeviceId() {
+  try {
+    const cached = localStorage.getItem(DEVICE_ID_STORAGE_KEY);
+    if (cached && typeof cached === "string" && cached.trim()) return cached.trim();
+  } catch {}
+  try {
+    const res = await api.post("/device-id", {
+      userAgent: typeof navigator !== "undefined" ? navigator.userAgent : undefined,
+    });
+    const deviceId = res.data?.deviceId;
+    if (deviceId && typeof deviceId === "string") {
+      localStorage.setItem(DEVICE_ID_STORAGE_KEY, deviceId);
+      return deviceId;
+    }
+  } catch (err) {
+    if (err.response?.status === 401) {
+      return null;
+    }
+  }
+  return null;
+}
+
 api.interceptors.response.use(
   (res) => res,
   (err) => {
@@ -40,6 +69,9 @@ export const getSessions = (params) => {
 };
 export const getSession = (id) => api.get(`/sessions/${id}`);
 export const getEvents = (id) => api.get(`/sessions/${id}/events`);
+/** Fetch a batch of chunks for progressive loading. start=0-based, limit=chunks per request */
+export const getEventsBatch = (sessionId, start = 0, limit = 5) =>
+  api.get(`/sessions/${sessionId}/chunks`, { params: { start, limit } });
 /** On-demand AI summary (analytics). Returns { aiSummary, generated }. */
 export const getEnsureSummary = (sessionId) => api.get(`/sessions/${sessionId}/ensure-summary`);
 /** On-demand root cause for friction points (analytics). Returns { frictionPoints, generated }. */

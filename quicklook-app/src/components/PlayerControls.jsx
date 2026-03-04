@@ -154,6 +154,7 @@ export default function PlayerControls({
 
   return (
     <Box
+      data-ql-block
       sx={{
         mt: 1.5,
         borderTop: "1px solid",

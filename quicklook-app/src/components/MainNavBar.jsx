@@ -4,9 +4,11 @@ import {
   IconButton,
   Tooltip,
   Menu,
+  MenuItem,
   ListItemButton,
   ListItemText,
   ListItemIcon,
+  ListItemSecondaryAction,
   CircularProgress,
 } from "@mui/material";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
@@ -23,6 +25,8 @@ import HomeIcon from "@mui/icons-material/Home";
 import PersonIcon from "@mui/icons-material/Person";
 import { getProjects } from "../api/quicklookApi";
 import { getPublicAssetUrl } from "../utils/baseUrl";
+import { useAuth } from "../contexts/AuthContext";
+import { usePlanFeatures } from "../hooks/usePlanFeatures";
 
 export const NAV_WIDTH = 64;
 
@@ -42,11 +46,16 @@ const iconButtonSx = {
 export default function MainNavBar() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user, logout } = useAuth();
   const { projectKey: routeProjectKey } = useParams();
   const projectKey = routeProjectKey || null;
   const [projects, setProjects] = useState([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [projectMenuAnchor, setProjectMenuAnchor] = useState(null);
+  const [accountMenuAnchor, setAccountMenuAnchor] = useState(null);
+  const { canCreateProject, canAccessAI } = usePlanFeatures(projects.length);
+  const isPro = user?.plan === "pro";
+  const navProSuffix = isPro ? "" : " (Pro)";
 
   useEffect(() => {
     let cancelled = false;
@@ -75,7 +84,6 @@ export default function MainNavBar() {
   const isReportsActive = Boolean(routeProjectKey && pathname.includes("/reports"));
   const isAbTestsActive = Boolean(routeProjectKey && pathname.includes("/ab-tests"));
   const isAccuracyActive = Boolean(routeProjectKey && pathname.includes("/accuracy"));
-  const isSettingsActive = pathname.includes("/settings");
   const isAccountActive = pathname === "/account";
 
   const selectedProject = projectKey ? projects.find((p) => p.projectKey === projectKey) : null;
@@ -211,9 +219,9 @@ export default function MainNavBar() {
         </Tooltip>
       </Box>
 
-      {/* Insights */}
+      {/* Insights — visible for all; upgrade message on page for Free */}
       <Box sx={{ display: "flex", justifyContent: "center", py: 0.5 }}>
-        <Tooltip title="Insights" placement="right">
+        <Tooltip title={isPro ? "Insights" : "Insights (Pro — upgrade to access)"} placement="right">
           <IconButton
             onClick={(e) => {
               if (projectKey) navigate(`/projects/${projectKey}/insights`);
@@ -234,9 +242,9 @@ export default function MainNavBar() {
         </Tooltip>
       </Box>
 
-      {/* Reports */}
+      {/* Reports — visible for all; upgrade message on page for Free */}
       <Box sx={{ display: "flex", justifyContent: "center", py: 0.5 }}>
-        <Tooltip title="Reports" placement="right">
+        <Tooltip title={isPro ? "Reports" : "Reports (Pro — upgrade to access)"} placement="right">
           <IconButton
             onClick={(e) => {
               if (projectKey) navigate(`/projects/${projectKey}/reports`);
@@ -257,9 +265,9 @@ export default function MainNavBar() {
         </Tooltip>
       </Box>
 
-      {/* A/B Tests */}
+      {/* A/B Tests — visible for all; upgrade message on page for Free */}
       <Box sx={{ display: "flex", justifyContent: "center", py: 0.5 }}>
-        <Tooltip title="A/B Tests" placement="right">
+        <Tooltip title={isPro ? "A/B Tests" : "A/B Tests (Pro — upgrade to access)"} placement="right">
           <IconButton
             onClick={(e) => {
               if (projectKey) navigate(`/projects/${projectKey}/ab-tests`);
@@ -280,9 +288,9 @@ export default function MainNavBar() {
         </Tooltip>
       </Box>
 
-      {/* Accuracy */}
+      {/* Accuracy — visible for all; upgrade message on page for Free */}
       <Box sx={{ display: "flex", justifyContent: "center", py: 0.5 }}>
-        <Tooltip title="Accuracy" placement="right">
+        <Tooltip title={isPro ? "Accuracy" : "Accuracy (Pro — upgrade to access)"} placement="right">
           <IconButton
             onClick={(e) => {
               if (projectKey) navigate(`/projects/${projectKey}/accuracy`);
@@ -349,14 +357,19 @@ export default function MainNavBar() {
         </Tooltip>
       </Box>
 
-      {/* Account - at bottom */}
+      {/* Account - at bottom (opens menu: Account, Subscription, Billing, Sign out) */}
       <Box sx={{ display: "flex", justifyContent: "center", py: 0.5 }}>
         <Tooltip title="Account" placement="right">
           <IconButton
-            onClick={() => navigate("/account")}
+            onClick={(e) => setAccountMenuAnchor(e.currentTarget)}
             sx={{
               ...iconButtonSx,
               ...(isAccountActive && {
+                color: "#fff",
+                bgcolor: "rgba(255,255,255,0.18)",
+                "&:hover": { bgcolor: "rgba(255,255,255,0.22)" },
+              }),
+              ...(accountMenuAnchor && {
                 color: "#fff",
                 bgcolor: "rgba(255,255,255,0.18)",
                 "&:hover": { bgcolor: "rgba(255,255,255,0.22)" },
@@ -369,30 +382,70 @@ export default function MainNavBar() {
         </Tooltip>
       </Box>
 
-      {/* Current Project Settings - at bottom */}
-      <Box sx={{ display: "flex", justifyContent: "center", py: 0.5 }}>
-        <Tooltip title="Project settings" placement="right">
-          <span>
-            <IconButton
-              onClick={() => {
-                if (projectKey) navigate(`/projects/${projectKey}/settings`);
-              }}
-              disabled={!projectKey}
-              sx={{
-                ...iconButtonSx,
-                ...(isSettingsActive && {
-                  color: "#fff",
-                  bgcolor: "rgba(255,255,255,0.18)",
-                  "&:hover": { bgcolor: "rgba(255,255,255,0.22)" },
-                }),
-                "&.Mui-disabled": { color: "rgba(255,255,255,0.35)" },
-              }}
-            >
-              <SettingsIcon sx={{ fontSize: 24 }} />
-            </IconButton>
-          </span>
-        </Tooltip>
-      </Box>
+      <Menu
+        anchorEl={accountMenuAnchor}
+        open={Boolean(accountMenuAnchor)}
+        onClose={() => setAccountMenuAnchor(null)}
+        anchorOrigin={{ vertical: "top", horizontal: "right" }}
+        transformOrigin={{ vertical: "bottom", horizontal: "right" }}
+        slotProps={{
+          paper: {
+            sx: {
+              minWidth: 200,
+              mt: -0.5,
+              ml: -0.5,
+              borderRadius: 2,
+              bgcolor: "background.paper",
+              border: "1px solid",
+              borderColor: "divider",
+            },
+          },
+        }}
+      >
+        <MenuItem
+          onClick={() => {
+            setAccountMenuAnchor(null);
+            navigate("/account");
+          }}
+        >
+          Account
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setAccountMenuAnchor(null);
+            navigate("/account/subscription");
+          }}
+        >
+          Subscription{user?.plan === "pro" ? " (Pro)" : ""}
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setAccountMenuAnchor(null);
+            navigate("/account/billing");
+          }}
+        >
+          Billing & Invoices
+        </MenuItem>
+        {user?.role === "admin" && (
+          <MenuItem
+            onClick={() => {
+              setAccountMenuAnchor(null);
+              navigate("/admin/plans");
+            }}
+          >
+            Admin panel
+          </MenuItem>
+        )}
+        <MenuItem
+          onClick={() => {
+            setAccountMenuAnchor(null);
+            logout();
+            navigate("/login", { replace: true });
+          }}
+        >
+          Sign out
+        </MenuItem>
+      </Menu>
 
       <Menu
         anchorEl={projectMenuAnchor}
@@ -418,14 +471,19 @@ export default function MainNavBar() {
         <ListItemButton
           onClick={() => {
             setProjectMenuAnchor(null);
-            navigate("/projects/new");
+            if (canCreateProject) navigate("/projects/new");
+            else navigate("/account/upgrade");
           }}
+          disabled={!canCreateProject}
           sx={{ py: 1, borderRadius: 1, mx: 0.5, mt: 0.5 }}
         >
           <ListItemIcon sx={{ minWidth: 36 }}>
-            <AddIcon fontSize="small" color="primary" />
+            <AddIcon fontSize="small" color={canCreateProject ? "primary" : "disabled"} />
           </ListItemIcon>
-          <ListItemText primary="Add project" primaryTypographyProps={{ variant: "body2", fontWeight: 500 }} />
+          <ListItemText
+            primary={canCreateProject ? "Add project" : "Add project (upgrade for more)"}
+            primaryTypographyProps={{ variant: "body2", fontWeight: 500 }}
+          />
         </ListItemButton>
         {projectsLoading ? (
           <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
@@ -441,6 +499,7 @@ export default function MainNavBar() {
                 borderRadius: 1,
                 mx: 0.5,
                 py: 0.75,
+                pr: 5,
                 "&.Mui-selected": {
                   background: "linear-gradient(135deg, rgba(190,149,250,0.35) 0%, rgba(147,112,219,0.2) 100%)",
                   color: "#fff",
@@ -470,6 +529,24 @@ export default function MainNavBar() {
                   },
                 }}
               />
+              <ListItemSecondaryAction sx={{ right: 8 }}>
+                <Tooltip title={`${project.name} settings`} placement="left">
+                  <IconButton
+                    size="small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setProjectMenuAnchor(null);
+                      navigate(`/projects/${project.projectKey}/settings`);
+                    }}
+                    sx={{
+                      color: "text.secondary",
+                      "&:hover": { color: "primary.main", bgcolor: "action.hover" },
+                    }}
+                  >
+                    <SettingsIcon sx={{ fontSize: 18 }} />
+                  </IconButton>
+                </Tooltip>
+              </ListItemSecondaryAction>
             </ListItemButton>
           ))
         )}

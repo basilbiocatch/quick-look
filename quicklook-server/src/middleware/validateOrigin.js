@@ -34,18 +34,23 @@ function normalizeOrigin(origin) {
 
 /**
  * Check if origin is allowed. allowedDomains can be full origins (https://example.com)
- * or bare hosts (example.com). We compare normalized origin and also origin's host.
+ * or bare hosts (example.com or host:port). We compare normalized origin and also origin's host.
+ * "localhost" (no port) is treated as allowing any origin whose hostname is "localhost" (any port).
  */
 function isOriginAllowed(origin, allowedDomains) {
   if (!Array.isArray(allowedDomains) || allowedDomains.length === 0) return true;
   const normalized = normalizeOrigin(origin);
   if (!normalized) return false;
-  const originHost = new URL(normalized).host.toLowerCase();
+  const originUrl = new URL(normalized);
+  const originHost = originUrl.host.toLowerCase();
+  const originHostname = originUrl.hostname.toLowerCase();
   for (const allowed of allowedDomains) {
     const s = String(allowed).trim().toLowerCase();
     if (!s) continue;
     if (s === normalized || s === originHost) return true;
     if (s.startsWith("http") && normalizeOrigin(s) === normalized) return true;
+    // "localhost" with no port allows any localhost origin (e.g. localhost:3080, localhost:5174)
+    if (s === "localhost" && originHostname === "localhost") return true;
   }
   return false;
 }

@@ -8,6 +8,11 @@ import logger from "../configs/loggingConfig.js";
  * GCS adapter for quicklook chunk storage.
  * Stores chunks as gzip-compressed JSON at {sessionId}/chunk-{index}.json.gz
  * with custom metadata (owner, projectKey, sessionId) for cost attribution.
+ * 
+ * Timeout configuration:
+ * - Long sessions can have 100+ chunks, making list operations slow
+ * - Network conditions vary; generous timeouts prevent spurious ECONNRESET errors
+ * - Resumable uploads handle large chunks and network interruptions
  */
 export class GcsAdapter {
   constructor(config = {}) {
@@ -17,6 +22,15 @@ export class GcsAdapter {
     this.storage = new Storage({
       ...(projectId && { projectId }),
       ...(keyFilename && { keyFilename }),
+      timeout: 300000, // 5 minutes timeout for all operations (upload, download, list)
+      retryOptions: {
+        autoRetry: true,
+        retryDelayMultiplier: 2,
+        totalTimeout: 600000, // 10 minutes total retry window
+        maxRetryDelay: 64000,
+        maxRetries: 6,
+        idempotencyStrategy: 1, // Always retry (even non-idempotent operations)
+      },
     });
     this.bucket = this.storage.bucket(this.bucketName);
   }
@@ -77,6 +91,8 @@ export class GcsAdapter {
         contentEncoding: "gzip",
         metadata: customMetadata,
       },
+      timeout: 300000, // 5 minutes timeout for upload
+      resumable: compressed.length > 2 * 1024 * 1024, // Use resumable upload for chunks >2MB (more reliable)
     });
     logger.info("GCS upload", {
       bucket: this.bucketName,
@@ -87,44 +103,116 @@ export class GcsAdapter {
   }
 
   /**
+   * List chunk files for a session using paginated list (smaller requests, less ECONNRESET).
+   * @param {string} sessionId
+   * @returns {Promise<Array<import('@google-cloud/storage').File>>}
+   */
+  async _listChunkFilesPaginated(sessionId) {
+    const prefix = `${sessionId}/`;
+    const listPageSize = 50;
+    const allFiles = [];
+    let query = { prefix, autoPaginate: false, maxResults: listPageSize };
+
+    while (query) {
+      const result = await this.bucket.getFiles(query);
+      const files = Array.isArray(result[0]) ? result[0] : result;
+      const nextQuery = result[1];
+      const chunkFiles = files.filter((f) => f && /^[^/]+\/chunk-(\d+)\.json\.gz$/.test(f.name));
+      allFiles.push(...chunkFiles);
+      const nextToken = nextQuery && (nextQuery.pageToken ?? nextQuery.nextPageToken);
+      if (nextToken) {
+        query = { prefix, autoPaginate: false, maxResults: listPageSize, pageToken: nextToken };
+      } else {
+        query = null;
+      }
+    }
+    return allFiles;
+  }
+
+  /**
+   * Download a single chunk file and parse to { index, events }.
+   */
+  async _downloadOneChunk(file, sessionId) {
+    const match = file.name.match(/^[^/]+\/chunk-(\d+)\.json\.gz$/);
+    const index = parseInt(match[1], 10);
+    const [contents] = await file.download({ timeout: 180000 });
+    let events;
+    try {
+      const decompressed = zlib.gunzipSync(contents);
+      events = JSON.parse(decompressed.toString("utf8"));
+    } catch (err) {
+      if (err.message && err.message.includes("incorrect header check")) {
+        events = JSON.parse(contents.toString("utf8"));
+      } else {
+        logger.error("GCS download chunk parse failed", {
+          sessionId: sessionId?.slice(0, 8),
+          index,
+          error: err.message,
+        });
+        throw err;
+      }
+    }
+    return { index, events };
+  }
+
+  /** Max concurrent chunk downloads per batch to avoid ECONNRESET / connection exhaustion */
+  static DOWNLOAD_BATCH_SIZE = 12;
+
+  /**
    * List and download all chunks for a session, sorted by index.
+   * Uses paginated list and batched downloads to avoid ECONNRESET on long sessions.
    * @param {string} sessionId
    * @returns {Promise<Array<{ index: number, events: Array }>>}
    */
   async downloadChunks(sessionId) {
-    const prefix = `${sessionId}/`;
-    const [files] = await this.bucket.getFiles({ prefix });
-    const fileList = files.filter((f) => /^[^/]+\/chunk-(\d+)\.json\.gz$/.test(f.name));
-    const chunks = await Promise.all(
-      fileList.map(async (file) => {
-        const match = file.name.match(/^[^/]+\/chunk-(\d+)\.json\.gz$/);
-        const index = parseInt(match[1], 10);
-        const [contents] = await file.download();
-        let events;
-        try {
-          const decompressed = zlib.gunzipSync(contents);
-          events = JSON.parse(decompressed.toString("utf8"));
-        } catch (err) {
-          if (err.message && err.message.includes("incorrect header check")) {
-            events = JSON.parse(contents.toString("utf8"));
-          } else {
-            logger.error("GCS download chunk parse failed", {
-              sessionId: sessionId?.slice(0, 8),
-              index,
-              error: err.message,
-            });
-            throw err;
-          }
-        }
-        return { index, events };
-      })
-    );
+    const fileList = await this._listChunkFilesPaginated(sessionId);
+    const chunks = [];
+    const batchSize = GcsAdapter.DOWNLOAD_BATCH_SIZE;
+
+    for (let i = 0; i < fileList.length; i += batchSize) {
+      const batch = fileList.slice(i, i + batchSize);
+      const batchResults = await Promise.all(
+        batch.map((file) => this._downloadOneChunk(file, sessionId))
+      );
+      chunks.push(...batchResults);
+    }
+
     chunks.sort((a, b) => a.index - b.index);
     logger.debug("GCS download", {
       bucket: this.bucketName,
       sessionId: sessionId?.slice(0, 8),
       chunkCount: chunks.length,
     });
+    return chunks;
+  }
+
+  /**
+   * Download a range of chunks for a session (for progressive loading).
+   * @param {string} sessionId
+   * @param {number} start - 0-based start index (chunk position, not chunk index)
+   * @param {number} limit - max chunks to return
+   * @returns {Promise<Array<{ index: number, events: Array }>>}
+   */
+  async downloadChunkRange(sessionId, start, limit) {
+    const fileList = await this._listChunkFilesPaginated(sessionId);
+    const sorted = fileList
+      .map((f) => {
+        const match = f.name.match(/^[^/]+\/chunk-(\d+)\.json\.gz$/);
+        return match ? { file: f, index: parseInt(match[1], 10) } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.index - b.index);
+    const slice = sorted.slice(start, start + limit);
+    const batchSize = Math.min(GcsAdapter.DOWNLOAD_BATCH_SIZE, slice.length || 1);
+    const chunks = [];
+    for (let i = 0; i < slice.length; i += batchSize) {
+      const batch = slice.slice(i, i + batchSize);
+      const batchResults = await Promise.all(
+        batch.map(({ file }) => this._downloadOneChunk(file, sessionId))
+      );
+      chunks.push(...batchResults);
+    }
+    chunks.sort((a, b) => a.index - b.index);
     return chunks;
   }
 

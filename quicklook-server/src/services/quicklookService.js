@@ -85,6 +85,22 @@ function decompressChunkData(data, compressed) {
   }
 }
 
+/** Check if user has reached their monthly session cap (for AI processing gating). */
+export async function hasReachedSessionCap(userId) {
+  const user = await User.findById(userId).select("sessionCap").lean();
+  if (!user || user.sessionCap == null) return false;
+  const thirtyDaysAgo = new Date(Date.now() - SESSION_CAP_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const projects = await QuicklookProject.find({ owner: userId }).select("projectKey").lean();
+  const projectKeys = projects.map((p) => p.projectKey);
+  if (projectKeys.length === 0) return false;
+  const count = await QuicklookSession.countDocuments({
+    projectKey: { $in: projectKeys },
+    status: "closed",
+    createdAt: { $gte: thirtyDaysAgo },
+  });
+  return count >= user.sessionCap;
+}
+
 export const QuicklookService = {
   async startSession({ projectKey, meta, user, ipAddress, retentionDays, geo = null, attributes = null, parentSessionId = null, sessionChainId = null, sequenceNumber = 1, splitReason = null, deviceId = null, deviceFingerprint = null }) {
     // Get project to use its retentionDays (set based on plan)
@@ -181,7 +197,13 @@ export const QuicklookService = {
     });
     const sessionDoc = await QuicklookSession.findOne({ sessionId });
     if (sessionDoc) {
-      sessionDoc.chunkCount = await chunkStorage.countChunks(sessionId);
+      // Increment chunk count instead of counting every time (expensive for GCS with many chunks)
+      // Use index+1 as the count if it's higher than current (handles out-of-order chunks)
+      const indexBasedCount = (index ?? 0) + 1;
+      if (indexBasedCount > (sessionDoc.chunkCount || 0)) {
+        sessionDoc.chunkCount = indexBasedCount;
+      }
+      
       const existing = new Set(Array.isArray(sessionDoc.pages) ? sessionDoc.pages : []);
       const hrefsFromChunk = events.filter((e) => e.type === 4 && e.data?.href).map((e) => String(e.data.href).trim()).filter(Boolean);
       for (const href of hrefsFromChunk) existing.add(href);
@@ -397,6 +419,67 @@ export const QuicklookService = {
       meta: {
         chunkCount: chunks.length,
         eventCount: events.length,
+        pages: [...pagesSet],
+        networkEvents: networkEvents.length,
+        consoleEvents: consoleEvents.length,
+      },
+    };
+  },
+
+  /**
+   * Get a batch of chunks for progressive loading.
+   * @param {string} sessionId
+   * @param {number} start - 0-based start index
+   * @param {number} limit - max chunks to return
+   * @returns {Promise<{ success, sessionId, events, meta: { totalChunks, returnedChunks, start, hasMore, pages, networkEvents, consoleEvents } }>}
+   */
+  async getSessionChunksBatch(sessionId, start = 0, limit = 5) {
+    const session = await QuicklookSession.findOne({ sessionId }).select("storageType chunkCount").lean();
+    let chunks;
+    let totalChunks;
+
+    if (session?.storageType === "gcs" && CHUNK_STORAGE_BACKEND === "gcs") {
+      totalChunks = await chunkStorage.countChunks(sessionId);
+      chunks = totalChunks > 0 ? await chunkStorage.getChunksRange(sessionId, start, limit) : [];
+      if (chunks.length === 0 && totalChunks === 0) {
+        const mongoChunks = await mongoChunkStorage.getChunks(sessionId);
+        totalChunks = mongoChunks.length;
+        chunks = mongoChunks.slice(start, start + limit);
+      }
+    } else {
+      totalChunks = await mongoChunkStorage.countChunks(sessionId);
+      chunks = totalChunks > 0 ? await mongoChunkStorage.getChunksRange(sessionId, start, limit) : [];
+      if (chunks.length === 0 && CHUNK_STORAGE_BACKEND === "gcs" && (session?.chunkCount ?? 0) > 0) {
+        totalChunks = await chunkStorage.countChunks(sessionId);
+        chunks = totalChunks > 0 ? await chunkStorage.getChunksRange(sessionId, start, limit) : [];
+      }
+    }
+
+    const events = [];
+    const pagesSet = new Set();
+    const networkEvents = [];
+    const consoleEvents = [];
+    for (const c of chunks) {
+      const chunkEvents = Array.isArray(c.events) ? c.events : [];
+      for (const e of chunkEvents) {
+        events.push(e);
+        if (e.type === 4 && e.data?.href) pagesSet.add(e.data.href);
+        if (e.type === 5) {
+          if (e.data?.tag === "ql_network") networkEvents.push(e);
+          if (e.data?.tag === "ql_console") consoleEvents.push(e);
+        }
+      }
+    }
+
+    return {
+      success: true,
+      sessionId,
+      events,
+      meta: {
+        totalChunks,
+        returnedChunks: chunks.length,
+        start,
+        hasMore: start + chunks.length < totalChunks,
         pages: [...pagesSet],
         networkEvents: networkEvents.length,
         consoleEvents: consoleEvents.length,

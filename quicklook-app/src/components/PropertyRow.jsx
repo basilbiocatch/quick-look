@@ -13,7 +13,11 @@ export default function PropertyRow({ label, value, icon }) {
         <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.75rem" }}>
           {label}
         </Typography>
-        <Typography variant="body2" noWrap title={value} sx={{ fontSize: "0.8125rem" }}>
+        <Typography
+          variant="body2"
+          title={typeof value === "string" && value.length > 60 ? value : undefined}
+          sx={{ fontSize: "0.8125rem", wordBreak: "break-word", overflowWrap: "break-word" }}
+        >
           {value ?? "—"}
         </Typography>
       </Box>

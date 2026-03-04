@@ -132,8 +132,9 @@ Features:
 Billing is implemented behind a **provider interface** so the codebase does not depend on Stripe (or any single vendor). The active provider is chosen by `PAYMENT_PROVIDER` (default `stripe`); only the adapter for that provider is loaded. To switch to Recurly later, implement the same interface and point config at it.
 
 **Principles:**
+
 - Controllers, jobs, and config API call **billingService** only (no Stripe imports).
-- User model stores **normalized** billing fields (`billing.*`), not provider-specific names.
+- User model stores **normalized** billing fields (`billing.`*), not provider-specific names.
 - Webhooks are parsed and normalized by the adapter; a single **subscriptionEventHandler** applies business logic (plan, retention, grace period).
 - Plan/coupon JSON holds **provider-specific ID blocks** (e.g. `stripe`, later `recurly`); seed script and adapter use only the block for the current provider.
 
@@ -190,21 +191,23 @@ Update `retentionDays` in projects based on plan:
 
 **Required methods:**
 
-| Method | Purpose | Out (normalized) |
-|--------|---------|------------------|
-| `createCustomer(email, name)` | Create billing customer | `{ customerId }` |
-| `createCheckoutSession(params)` | Start hosted checkout | `{ redirectUrl, sessionId }` |
-| `createBillingPortalSession(customerId, returnUrl)` | Manage subscription | `{ redirectUrl }` |
-| `getSubscription(subscriptionId)` | Fetch subscription | `{ status, priceId, interval, currentPeriodEnd, cancelAtPeriodEnd }` |
-| `cancelSubscription(subscriptionId)` | Cancel at period end | `{ canceled, currentPeriodEnd }` |
-| `getInvoices(customerId, limit)` | List invoices | `[{ id, amount, status, createdAt, invoicePdfUrl }]` |
-| `getUpcomingInvoice(customerId)` | Preview next charge | `{ amount, nextPaymentAt }` or null |
-| `getClientConfig()` | Frontend config | `{ publishableKey?, provider }` |
-| `handleWebhook(rawBody, signature, headers)` | Parse and normalize webhook | `{ events: [{ type, subscriptionId?, customerId?, status?, ... }] }` |
-| `createProduct(name, description, metadata)` | Create product/plan (seed) | `{ productId }` |
-| `createPrice(productId, amountCents, currency, interval, metadata)` | Create price (seed) | `{ priceId }` |
-| `createCoupon(spec)` | Create discount (seed) | `{ couponId, promoCodeId }` |
-| `validatePromoCode(code)` | Validate coupon | `{ valid, discount?, error? }` |
+
+| Method                                                              | Purpose                     | Out (normalized)                                                     |
+| ------------------------------------------------------------------- | --------------------------- | -------------------------------------------------------------------- |
+| `createCustomer(email, name)`                                       | Create billing customer     | `{ customerId }`                                                     |
+| `createCheckoutSession(params)`                                     | Start hosted checkout       | `{ redirectUrl, sessionId }`                                         |
+| `createBillingPortalSession(customerId, returnUrl)`                 | Manage subscription         | `{ redirectUrl }`                                                    |
+| `getSubscription(subscriptionId)`                                   | Fetch subscription          | `{ status, priceId, interval, currentPeriodEnd, cancelAtPeriodEnd }` |
+| `cancelSubscription(subscriptionId)`                                | Cancel at period end        | `{ canceled, currentPeriodEnd }`                                     |
+| `getInvoices(customerId, limit)`                                    | List invoices               | `[{ id, amount, status, createdAt, invoicePdfUrl }]`                 |
+| `getUpcomingInvoice(customerId)`                                    | Preview next charge         | `{ amount, nextPaymentAt }` or null                                  |
+| `getClientConfig()`                                                 | Frontend config             | `{ publishableKey?, provider }`                                      |
+| `handleWebhook(rawBody, signature, headers)`                        | Parse and normalize webhook | `{ events: [{ type, subscriptionId?, customerId?, status?, ... }] }` |
+| `createProduct(name, description, metadata)`                        | Create product/plan (seed)  | `{ productId }`                                                      |
+| `createPrice(productId, amountCents, currency, interval, metadata)` | Create price (seed)         | `{ priceId }`                                                        |
+| `createCoupon(spec)`                                                | Create discount (seed)      | `{ couponId, promoCodeId }`                                          |
+| `validatePromoCode(code)`                                           | Validate coupon             | `{ valid, discount?, error? }`                                       |
+
 
 **Create** [quicklook-server/src/billing/billingService.js](quicklook-server/src/billing/billingService.js): Single entry point. Reads `PAYMENT_PROVIDER` (default `stripe`), loads the corresponding adapter, and delegates all calls. Controllers and jobs use only `billingService`, never a provider SDK.
 
@@ -626,7 +629,7 @@ Instead of hardcoded configurations, implement a flexible system that allows liv
 
 **JSON Configuration (Plan Details):**
 
-- ✅ Price IDs per provider (e.g. `stripe.testPriceId`, `stripe.livePriceId`; later `recurly.*` for Recurly)
+- ✅ Price IDs per provider (e.g. `stripe.testPriceId`, `stripe.livePriceId`; later `recurly.`* for Recurly)
 - ✅ Pricing amounts and display text
 - ✅ Feature flags and limits
 - ✅ UI copy, taglines, feature lists

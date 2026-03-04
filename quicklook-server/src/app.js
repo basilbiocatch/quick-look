@@ -11,8 +11,14 @@ import compression from "compression";
 import cors from "cors";
 import quicklookRoutes from "./routes/quicklookRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
+import subscriptionRoutes from "./routes/subscriptionRoutes.js";
+import configRoutes from "./routes/configRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
+import { requireAuth } from "./middleware/jwtAuth.js";
+import { stripeBillingWebhook } from "./controllers/webhookController.js";
 import { startQuicklookRetentionJob, startAutoCloseInactiveSessionsJob } from "./jobs/quicklookRetention.js";
 import { startStorageCostJob } from "./jobs/storageCostJob.js";
+import { startGracePeriodCleanupJob } from "./jobs/gracePeriodCleanup.js";
 import { checkGcsBucketAtStartup } from "./services/quicklookService.js";
 import logger from "./configs/loggingConfig.js";
 
@@ -24,12 +30,37 @@ const app = express();
 app.set("trust proxy", true);
 
 app.use(cors({ origin: "*" }));
-app.use(compression());
+
+// Compression middleware with optimized settings for large JSON responses
+app.use(compression({
+  filter: (req, res) => {
+    // Always compress unless explicitly disabled
+    if (req.headers['x-no-compression']) {
+      return false;
+    }
+    // Compress all compressible content
+    return compression.filter(req, res);
+  },
+  level: 6, // Balance between speed (1-fastest) and compression ratio (9-best). 6 is a good default.
+  threshold: 1024, // Only compress responses larger than 1KB
+  memLevel: 8, // Memory usage for compression (1-9, higher = more memory but better compression)
+}));
+
+// Stripe webhook must receive raw body for signature verification
+app.post(
+  "/api/webhooks/billing/stripe",
+  express.raw({ type: "application/json" }),
+  stripeBillingWebhook
+);
+
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/quicklook", quicklookRoutes);
+app.use("/api/subscriptions", subscriptionRoutes);
+app.use("/api/config", configRoutes);
+app.use("/api/admin", requireAuth, adminRoutes);
 
 app.get("/health", (req, res) => {
   res.status(200).json({ ok: true, service: "quicklook-server" });
@@ -69,6 +100,7 @@ function startServer(server) {
     startQuicklookRetentionJob();
     startAutoCloseInactiveSessionsJob();
     startStorageCostJob();
+    startGracePeriodCleanupJob();
     checkGcsBucketAtStartup().catch(() => {});
   });
 }

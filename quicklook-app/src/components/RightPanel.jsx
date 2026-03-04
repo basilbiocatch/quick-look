@@ -50,6 +50,7 @@ import { parseDevice, parseOS, parseBrowser, formatDuration } from "../utils/ses
 import { buildActivityList, getPagesFromEvents, urlPageKey } from "../utils/activityList";
 import { format } from "date-fns";
 import PropertyRow from "./PropertyRow";
+import ErrorDisplay from "./ErrorDisplay";
 
 function getApiBase() {
   const base = import.meta.env.VITE_API_BASE_URL;
@@ -58,7 +59,7 @@ function getApiBase() {
   return "";
 }
 
-function CollapsibleSection({ title, defaultOpen = true, children, action }) {
+function CollapsibleSection({ title, defaultOpen = true, children, action, compact = false }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <Box sx={{ borderBottom: "1px solid", borderColor: "divider" }}>
@@ -68,13 +69,13 @@ function CollapsibleSection({ title, defaultOpen = true, children, action }) {
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          py: 1,
-          px: 1.5,
+          py: compact ? 0.75 : 1,
+          px: compact ? 1 : 1.5,
           cursor: "pointer",
           "&:hover": { bgcolor: "action.hover" },
         }}
       >
-        <Typography variant="subtitle2" fontWeight={600} sx={{ fontSize: "0.8125rem" }}>
+        <Typography variant="subtitle2" fontWeight={600} sx={{ fontSize: compact ? "0.75rem" : "0.8125rem" }}>
           {title}
         </Typography>
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
@@ -83,7 +84,7 @@ function CollapsibleSection({ title, defaultOpen = true, children, action }) {
         </Box>
       </Box>
       <Collapse in={open}>
-        <Box sx={{ px: 1.5, pb: 1.5 }}>{children}</Box>
+        <Box sx={{ px: compact ? 1 : 1.5, pb: compact ? 1 : 1.5 }}>{children}</Box>
       </Collapse>
     </Box>
   );
@@ -156,6 +157,7 @@ export default function RightPanel({
   summaryError = "",
   relatedSessionsByIp = [],
   relatedSessionsByDevice = [],
+  isMobile = false,
 }) {
   const navigate = useNavigate();
   const [relatedTab, setRelatedTab] = useState(0);
@@ -242,9 +244,10 @@ ${setupSnippet}`
 
   return (
     <Box
+      data-ql-block
       sx={{
-        width: 340,
-        minWidth: 340,
+        width: isMobile ? "100%" : 340,
+        minWidth: isMobile ? 0 : 340,
         overflow: "auto",
         bgcolor: "background.paper",
         display: "flex",
@@ -252,13 +255,15 @@ ${setupSnippet}`
         boxShadow: (theme) => (theme.palette.mode === "dark" ? "0 0 24px rgba(0,0,0,0.15)" : "0 0 20px rgba(0,0,0,0.06)"),
         pt: 0,
         borderRadius: 1,
-        m: 1.5,
-        mr: 2,
+        m: isMobile ? 1 : 1.5,
+        mr: isMobile ? 1 : 2,
+        ...(isMobile && { borderTop: "1px solid", borderColor: "divider" }),
       }}
     >
       <CollapsibleSection
         title="User properties"
-        defaultOpen={true}
+        defaultOpen={!isMobile}
+        compact={isMobile}
         action={
           <IconButton size="small" title="Show all user details">
             <BadgeIcon fontSize="small" />
@@ -288,7 +293,8 @@ ${setupSnippet}`
 
       <CollapsibleSection
         title="Related sessions"
-        defaultOpen={true}
+        defaultOpen={!isMobile}
+        compact={isMobile}
         action={
           <Tooltip title="Other sessions from the same device or IP in this project">
             <RouterIcon sx={{ fontSize: 18, color: "text.secondary" }} />
@@ -387,7 +393,8 @@ ${setupSnippet}`
 
       <CollapsibleSection
         title="AI Summary"
-        defaultOpen={true}
+        defaultOpen={!isMobile}
+        compact={isMobile}
         action={
           <PsychologyIcon sx={{ fontSize: 18, color: "primary.main" }} />
         }
@@ -399,11 +406,11 @@ ${setupSnippet}`
           </Box>
         )}
         {summaryError && !summaryLoading && (
-          <Typography variant="caption" color="error">{summaryError}</Typography>
+          <ErrorDisplay message={summaryError} compact showDetails={false} />
         )}
         {aiSummary && !summaryLoading && (
           <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-            <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>{(() => {
+            <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word", overflowWrap: "break-word" }}>{(() => {
               const raw = aiSummary.narrative;
               if (raw == null) return "—";
               if (typeof raw !== "string") return String(raw);
@@ -429,7 +436,8 @@ ${setupSnippet}`
 
       <CollapsibleSection
         title="Session properties"
-        defaultOpen={true}
+        defaultOpen={!isMobile}
+        compact={isMobile}
         action={
           <IconButton size="small" title="Show all properties" onClick={(e) => { e.stopPropagation(); setAllPropertiesDialogOpen(true); }}>
             <TuneIcon fontSize="small" />

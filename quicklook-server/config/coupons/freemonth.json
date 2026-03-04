@@ -1,0 +1,19 @@
+{
+  "couponId": "freemonth",
+  "code": "FREEMONTH",
+  "active": true,
+  "type": "free_months",
+  "discount": {
+    "freeMonths": 1
+  },
+  "stripe": {
+    "couponId": "RtueZ2v2",
+    "promoCodeId": "promo_1T72sY5hFhr4WcIeosoAb3CG"
+  },
+  "restrictions": {
+    "firstTimeOnly": true,
+    "maxRedemptions": 50
+  },
+  "displayName": "First Month Free",
+  "description": "Get your first month on us"
+}

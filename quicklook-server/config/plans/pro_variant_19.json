@@ -1,0 +1,54 @@
+{
+  "planId": "pro_variant_19_v1",
+  "tier": "pro",
+  "displayName": "Pro",
+  "tagline": "For teams that need insights",
+  "active": true,
+  "stripe": {
+    "productId": "prod_U5DJXRbSkkUM5S",
+    "monthlyPriceId": "price_1T72sR5hFhr4WcIeL5uqfFQd",
+    "annualPriceId": "price_1T72sS5hFhr4WcIeQYbnmz57"
+  },
+  "pricing": {
+    "monthly": {
+      "amount": 19,
+      "currency": "usd",
+      "displayPrice": "$19/mo"
+    },
+    "annual": {
+      "amount": 190,
+      "currency": "usd",
+      "displayPrice": "$190/year",
+      "effectiveMonthly": "$15.83/mo",
+      "savingsText": "Save $38 (2 months free)"
+    },
+    "defaultInterval": "annual"
+  },
+  "limits": {
+    "retentionDays": 90,
+    "sessionCap": 5000,
+    "projectLimit": null
+  },
+  "features": {
+    "recordings": true,
+    "aiTools": true,
+    "devTools": true,
+    "prioritySupport": false
+  },
+  "ui": {
+    "badgeText": "Limited time",
+    "description": "Unlock AI-powered insights and analytics",
+    "featureList": [
+      "90 days data retention",
+      "5,000 sessions per month",
+      "Full AI tools suite",
+      "Unlimited projects",
+      "Dev tools in replay"
+    ]
+  },
+  "abTest": {
+    "experimentId": "pricing_test_march_2026",
+    "variant": "lower_price",
+    "trafficAllocation": 50
+  }
+}

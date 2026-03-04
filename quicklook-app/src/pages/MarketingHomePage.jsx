@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import {
   Box,
@@ -8,12 +8,14 @@ import {
   Grid,
   Card,
   CardContent,
+  CircularProgress,
 } from "@mui/material";
 import VideocamIcon from "@mui/icons-material/Videocam";
 import BugReportIcon from "@mui/icons-material/BugReport";
 import InsightsIcon from "@mui/icons-material/Insights";
 import CheckIcon from "@mui/icons-material/Check";
 import { getPublicAssetUrl, getBasePath } from "../utils/baseUrl";
+import { getPlansConfig } from "../api/subscriptionApi";
 
 const sectionSx = {
   py: { xs: 6, md: 10 },
@@ -25,6 +27,26 @@ export default function MarketingHomePage() {
   const base = getBasePath();
   const loginHref = base === "/" ? "/login" : `${base}/login`;
   const signupHref = base === "/" ? "/signup" : `${base}/signup`;
+
+  const [plans, setPlans] = useState(null);
+  const [plansLoading, setPlansLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    getPlansConfig()
+      .then((res) => {
+        if (cancelled) return;
+        const data = res.data?.plans ?? res.data?.data ?? res.data;
+        setPlans(Array.isArray(data) ? data : null);
+      })
+      .catch(() => {
+        if (!cancelled) setPlans(null);
+      })
+      .finally(() => {
+        if (!cancelled) setPlansLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <Box
@@ -401,160 +423,158 @@ export default function MarketingHomePage() {
         </Container>
       </Box>
 
-      {/* Pricing */}
+      {/* Pricing — from GET /api/config/plans (config + experiments when logged in) */}
       <Box component="section" sx={sectionSx} id="pricing">
         <Container maxWidth="lg">
           <Typography component="h2" variant="h4" fontWeight={700} textAlign="center" sx={{ mb: 6 }}>
             Simple, transparent pricing
           </Typography>
-          <Grid container spacing={3} justifyContent="center" alignItems="stretch">
-            {/* Free */}
-            <Grid item xs={12} sm={4}>
-              <Card
-                elevation={0}
-                sx={{
-                  height: "100%",
-                  display: "flex",
-                  flexDirection: "column",
-                  border: "1px solid",
-                  borderColor: "divider",
-                  borderRadius: 2,
-                  bgcolor: "background.paper",
-                }}
-              >
-                <CardContent sx={{ p: 3, flex: 1, display: "flex", flexDirection: "column" }}>
-                  <Typography variant="h6" fontWeight={600} gutterBottom>
-                    Free
-                  </Typography>
-                  <Typography variant="h4" fontWeight={700} sx={{ my: 1 }}>
-                    1,000 sessions
-                  </Typography>
-                  <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
-                    Perfect to get started
-                  </Typography>
-                  <Box component="ul" sx={{ m: 0, pl: 2.5, color: "text.secondary", "& li": { display: "flex", alignItems: "center", gap: 1, mb: 1, "& svg": { color: "success.main", flexShrink: 0 } } }}>
-                    <li><CheckIcon sx={{ fontSize: 18 }} /> Session Recording</li>
-                    <li><CheckIcon sx={{ fontSize: 18 }} /> 30-day retention</li>
-                  </Box>
-                  <Button
-                    component={Link}
-                    to="/signup"
-                    variant="outlined"
-                    fullWidth
-                    sx={{ mt: "auto", py: 1.5 }}
-                  >
-                    Try Free
-                  </Button>
-                </CardContent>
-              </Card>
+          {plansLoading ? (
+            <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
+              <CircularProgress />
+            </Box>
+          ) : plans?.length > 0 ? (
+            <Grid container spacing={3} justifyContent="center" alignItems="stretch">
+              {plans.map((plan, index) => {
+                const isPro = plan.tier === "pro";
+                const isEnterprise = plan.tier === "enterprise" || plan.tier === "premium";
+                const highlight = isPro || plan.ui?.badgeText;
+                const priceDisplay = plan.pricing?.annual?.displayPrice ?? plan.pricing?.monthly?.displayPrice ?? null;
+                const sessionLabel = plan.limits?.sessionCap != null
+                  ? `${plan.limits.sessionCap.toLocaleString()} sessions`
+                  : plan.limits?.sessionCap == null && isEnterprise
+                    ? "Unlimited"
+                    : null;
+                const featureList = plan.ui?.featureList ?? [];
+                return (
+                  <Grid item xs={12} sm={4} key={`${plan.tier}-${index}`}>
+                    <Card
+                      elevation={0}
+                      sx={{
+                        height: "100%",
+                        display: "flex",
+                        flexDirection: "column",
+                        border: highlight ? "2px solid" : "1px solid",
+                        borderColor: highlight ? "primary.main" : "divider",
+                        borderRadius: 2,
+                        bgcolor: highlight ? "rgba(190,149,250,0.06)" : "background.paper",
+                        position: "relative",
+                      }}
+                    >
+                      {highlight && (
+                        <Box
+                          sx={{
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            height: 4,
+                            background: "linear-gradient(90deg, #be95fa, #6366f1)",
+                            borderRadius: "8px 8px 0 0",
+                          }}
+                        />
+                      )}
+                      <CardContent sx={{ p: 3, flex: 1, display: "flex", flexDirection: "column", pt: highlight ? 4 : 3 }}>
+                        {plan.ui?.badgeText && (
+                          <Typography variant="caption" fontWeight={600} color="primary" sx={{ mb: 0.5 }}>
+                            {plan.ui.badgeText}
+                          </Typography>
+                        )}
+                        <Typography variant="h6" fontWeight={600} gutterBottom>
+                          {plan.displayName || plan.tier}
+                        </Typography>
+                        <Typography variant="h4" fontWeight={700} sx={{ my: 1 }}>
+                          {priceDisplay || sessionLabel || plan.displayName}
+                        </Typography>
+                        <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
+                          {plan.tagline || plan.ui?.description || ""}
+                        </Typography>
+                        <Box component="ul" sx={{ m: 0, pl: 2.5, color: "text.secondary", "& li": { display: "flex", alignItems: "center", gap: 1, mb: 1, "& svg": { color: "success.main", flexShrink: 0 } } }}>
+                          {featureList.map((item, i) => (
+                            <li key={i}><CheckIcon sx={{ fontSize: 18 }} /> {item}</li>
+                          ))}
+                        </Box>
+                        {isEnterprise ? (
+                          <Button
+                            href="mailto:sales@quicklook.io"
+                            variant="outlined"
+                            fullWidth
+                            sx={{ mt: "auto", py: 1.5 }}
+                          >
+                            Contact Sales
+                          </Button>
+                        ) : (
+                          <Button
+                            component={Link}
+                            to={isPro ? "/signup?plan=pro" : "/signup"}
+                            variant={isPro ? "contained" : "outlined"}
+                            fullWidth
+                            sx={{
+                              mt: "auto",
+                              py: 1.5,
+                              ...(isPro && { background: primaryGradient, color: "#fff", "&:hover": { opacity: 0.95, background: primaryGradient } }),
+                            }}
+                          >
+                            {isPro ? "Start Now" : "Try Free"}
+                          </Button>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                );
+              })}
             </Grid>
-            {/* Pro */}
-            <Grid item xs={12} sm={4}>
-              <Card
-                elevation={0}
-                sx={{
-                  height: "100%",
-                  display: "flex",
-                  flexDirection: "column",
-                  border: "2px solid",
-                  borderColor: "primary.main",
-                  borderRadius: 2,
-                  bgcolor: "rgba(190,149,250,0.06)",
-                  position: "relative",
-                }}
-              >
-                <Box
-                  sx={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: 4,
-                    background: "linear-gradient(90deg, #be95fa, #6366f1)",
-                    borderRadius: "8px 8px 0 0",
-                  }}
-                />
-                <CardContent sx={{ p: 3, flex: 1, display: "flex", flexDirection: "column", pt: 4 }}>
-                  <Typography variant="h6" fontWeight={600} gutterBottom>
-                    Pro
-                  </Typography>
-                  <Typography variant="h4" fontWeight={700} sx={{ my: 1 }}>
-                    5,000 sessions
-                  </Typography>
-                  <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
-                    For growing teams
-                  </Typography>
-                  <Box component="ul" sx={{ m: 0, pl: 2.5, color: "text.secondary", "& li": { display: "flex", alignItems: "center", gap: 1, mb: 1, "& svg": { color: "success.main", flexShrink: 0 } } }}>
-                    <li><CheckIcon sx={{ fontSize: 18 }} /> Everything in Free</li>
-                    <li><CheckIcon sx={{ fontSize: 18 }} /> DevTools (console &amp; network)</li>
-                    <li><CheckIcon sx={{ fontSize: 18 }} /> 90-day retention</li>
-                    <li><CheckIcon sx={{ fontSize: 18 }} /> Multiple projects</li>
-                    <li><CheckIcon sx={{ fontSize: 18 }} /> AI Insights dashboard (conversion impact, friction patterns)</li>
-                    <li><CheckIcon sx={{ fontSize: 18 }} /> Friction detection &amp; AI root cause per session</li>
-                    <li><CheckIcon sx={{ fontSize: 18 }} /> AI session summaries (intent, drop-off, key moments)</li>
-                    <li><CheckIcon sx={{ fontSize: 18 }} /> Suggested fixes with predicted lift (A/B test ideas)</li>
-                  </Box>
-                  <Button
-                    component={Link}
-                    to="/signup"
-                    variant="contained"
-                    fullWidth
-                    sx={{
-                      mt: "auto",
-                      py: 1.5,
-                      background: primaryGradient,
-                      color: "#fff",
-                      "&:hover": { opacity: 0.95, background: primaryGradient },
-                    }}
-                  >
-                    Start Now
-                  </Button>
-                </CardContent>
-              </Card>
+          ) : (
+            <Grid container spacing={3} justifyContent="center" alignItems="stretch">
+              <Grid item xs={12} sm={4}>
+                <Card elevation={0} sx={{ height: "100%", display: "flex", flexDirection: "column", border: "1px solid", borderColor: "divider", borderRadius: 2, bgcolor: "background.paper" }}>
+                  <CardContent sx={{ p: 3, flex: 1, display: "flex", flexDirection: "column" }}>
+                    <Typography variant="h6" fontWeight={600} gutterBottom>Free</Typography>
+                    <Typography variant="h4" fontWeight={700} sx={{ my: 1 }}>1,000 sessions</Typography>
+                    <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>Perfect to get started</Typography>
+                    <Box component="ul" sx={{ m: 0, pl: 2.5, color: "text.secondary", "& li": { display: "flex", alignItems: "center", gap: 1, mb: 1, "& svg": { color: "success.main", flexShrink: 0 } } }}>
+                      <li><CheckIcon sx={{ fontSize: 18 }} /> Session Recording</li>
+                      <li><CheckIcon sx={{ fontSize: 18 }} /> 30-day retention</li>
+                    </Box>
+                    <Button component={Link} to="/signup" variant="outlined" fullWidth sx={{ mt: "auto", py: 1.5 }}>Try Free</Button>
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <Card elevation={0} sx={{ height: "100%", display: "flex", flexDirection: "column", border: "2px solid", borderColor: "primary.main", borderRadius: 2, bgcolor: "rgba(190,149,250,0.06)", position: "relative" }}>
+                  <Box sx={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: "linear-gradient(90deg, #be95fa, #6366f1)", borderRadius: "8px 8px 0 0" }} />
+                  <CardContent sx={{ p: 3, flex: 1, display: "flex", flexDirection: "column", pt: 4 }}>
+                    <Typography variant="h6" fontWeight={600} gutterBottom>Pro</Typography>
+                    <Typography variant="h4" fontWeight={700} sx={{ my: 1 }}>5,000 sessions</Typography>
+                    <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>For growing teams</Typography>
+                    <Box component="ul" sx={{ m: 0, pl: 2.5, color: "text.secondary", "& li": { display: "flex", alignItems: "center", gap: 1, mb: 1, "& svg": { color: "success.main", flexShrink: 0 } } }}>
+                      <li><CheckIcon sx={{ fontSize: 18 }} /> Everything in Free</li>
+                      <li><CheckIcon sx={{ fontSize: 18 }} /> DevTools</li>
+                      <li><CheckIcon sx={{ fontSize: 18 }} /> 90-day retention</li>
+                      <li><CheckIcon sx={{ fontSize: 18 }} /> Multiple projects</li>
+                      <li><CheckIcon sx={{ fontSize: 18 }} /> AI Insights</li>
+                    </Box>
+                    <Button component={Link} to="/signup?plan=pro" variant="contained" fullWidth sx={{ mt: "auto", py: 1.5, background: primaryGradient, color: "#fff", "&:hover": { opacity: 0.95, background: primaryGradient } }}>Start Now</Button>
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <Card elevation={0} sx={{ height: "100%", display: "flex", flexDirection: "column", border: "1px solid", borderColor: "divider", borderRadius: 2, bgcolor: "background.paper" }}>
+                  <CardContent sx={{ p: 3, flex: 1, display: "flex", flexDirection: "column" }}>
+                    <Typography variant="h6" fontWeight={600} gutterBottom>Enterprise</Typography>
+                    <Typography variant="h4" fontWeight={700} sx={{ my: 1 }}>Unlimited</Typography>
+                    <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>Custom needs — let&apos;s talk</Typography>
+                    <Box component="ul" sx={{ m: 0, pl: 2.5, color: "text.secondary", "& li": { display: "flex", alignItems: "center", gap: 1, mb: 1, "& svg": { color: "success.main", flexShrink: 0 } } }}>
+                      <li><CheckIcon sx={{ fontSize: 18 }} /> Everything in Pro</li>
+                      <li><CheckIcon sx={{ fontSize: 18 }} /> Unlimited sessions</li>
+                      <li><CheckIcon sx={{ fontSize: 18 }} /> Dedicated support</li>
+                    </Box>
+                    <Button href="mailto:sales@quicklook.io" variant="outlined" fullWidth sx={{ mt: "auto", py: 1.5 }}>Contact Sales</Button>
+                  </CardContent>
+                </Card>
+              </Grid>
             </Grid>
-            {/* Enterprise */}
-            <Grid item xs={12} sm={4}>
-              <Card
-                elevation={0}
-                sx={{
-                  height: "100%",
-                  display: "flex",
-                  flexDirection: "column",
-                  border: "1px solid",
-                  borderColor: "divider",
-                  borderRadius: 2,
-                  bgcolor: "background.paper",
-                }}
-              >
-                <CardContent sx={{ p: 3, flex: 1, display: "flex", flexDirection: "column" }}>
-                  <Typography variant="h6" fontWeight={600} gutterBottom>
-                    Enterprise
-                  </Typography>
-                  <Typography variant="h4" fontWeight={700} sx={{ my: 1 }}>
-                    Unlimited
-                  </Typography>
-                  <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
-                    Custom needs — let&apos;s talk
-                  </Typography>
-                  <Box component="ul" sx={{ m: 0, pl: 2.5, color: "text.secondary", "& li": { display: "flex", alignItems: "center", gap: 1, mb: 1, "& svg": { color: "success.main", flexShrink: 0 } } }}>
-                    <li><CheckIcon sx={{ fontSize: 18 }} /> Everything in Pro</li>
-                    <li><CheckIcon sx={{ fontSize: 18 }} /> Unlimited sessions</li>
-                    <li><CheckIcon sx={{ fontSize: 18 }} /> DevTools included</li>
-                    <li><CheckIcon sx={{ fontSize: 18 }} /> Custom retention</li>
-                    <li><CheckIcon sx={{ fontSize: 18 }} /> Dedicated support</li>
-                  </Box>
-                  <Button
-                    href="mailto:sales@quicklook.io"
-                    variant="outlined"
-                    fullWidth
-                    sx={{ mt: "auto", py: 1.5 }}
-                  >
-                    Contact Sales
-                  </Button>
-                </CardContent>
-              </Card>
-            </Grid>
-          </Grid>
+          )}
         </Container>
       </Box>
 

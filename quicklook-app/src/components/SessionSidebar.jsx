@@ -4,6 +4,9 @@ import {
   Typography,
   ListItemButton,
   ListItemText,
+  Button,
+  ToggleButtonGroup,
+  ToggleButton,
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import CheckIcon from "@mui/icons-material/Check";
@@ -13,13 +16,81 @@ import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import HomeIcon from "@mui/icons-material/Home";
 
 const segmentOptions = [
-  { value: "closed", label: "Completed sessions", Icon: CheckCircleOutlineIcon },
-  { value: "active", label: "Active sessions", Icon: RadioButtonCheckedIcon },
-  { value: "", label: "All sessions", Icon: AutoAwesomeIcon },
+  { value: "closed", label: "Completed", shortLabel: "Completed", Icon: CheckCircleOutlineIcon },
+  { value: "active", label: "Active sessions", shortLabel: "Live", Icon: RadioButtonCheckedIcon },
+  { value: "", label: "All sessions", shortLabel: "All", Icon: AutoAwesomeIcon },
 ];
 
-export default function SessionSidebar({ status, setStatus }) {
+export default function SessionSidebar({ status, setStatus, placement = "sidebar" }) {
   const navigate = useNavigate();
+  const isTop = placement === "top";
+
+  if (isTop) {
+    return (
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          flexShrink: 0,
+          borderBottom: "1px solid",
+          borderColor: "divider",
+          bgcolor: "background.paper",
+          boxShadow: (theme) => (theme.palette.mode === "dark" ? "0 2px 12px rgba(0,0,0,0.2)" : "0 2px 8px rgba(0,0,0,0.06)"),
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 1.5, pt: 1.5, pb: 1 }}>
+          <Button
+            startIcon={<HomeIcon sx={{ fontSize: 18 }} />}
+            onClick={() => navigate("/")}
+            sx={{
+              textTransform: "none",
+              fontSize: "0.8125rem",
+              color: "text.secondary",
+              minHeight: 36,
+              "&:hover": { bgcolor: "action.hover", color: "text.primary" },
+            }}
+          >
+            Back to dashboard
+          </Button>
+        </Box>
+        <Box sx={{ display: "flex", gap: 0.5, px: 1.5, pb: 1.5, flexWrap: "wrap" }}>
+          <ToggleButtonGroup
+            value={status}
+            exclusive
+            onChange={(_, v) => v != null && setStatus(v)}
+            aria-label="Session segment"
+            sx={{
+              "& .MuiToggleButtonGroup-grouped": {
+                border: "1px solid",
+                borderColor: "divider",
+                borderRadius: "8px !important",
+                px: 1.5,
+                py: 0.75,
+                textTransform: "none",
+                fontSize: "0.8125rem",
+                "&.Mui-selected": {
+                  background: "linear-gradient(135deg, rgba(190,149,250,0.45) 0%, rgba(190,149,250,0.25) 50%, rgba(147,112,219,0.35) 100%)",
+                  color: "#fff",
+                  borderColor: "rgba(190,149,250,0.5)",
+                  "&:hover": {
+                    background: "linear-gradient(135deg, rgba(190,149,250,0.55) 0%, rgba(190,149,250,0.35) 100%)",
+                    color: "#fff",
+                  },
+                },
+              },
+            }}
+          >
+            {segmentOptions.map(({ value, label, shortLabel, Icon }) => (
+              <ToggleButton key={value === "" ? "all" : value} value={value} aria-label={label}>
+                <Icon sx={{ fontSize: 18, mr: 0.75, opacity: status === value ? 1 : 0.7 }} />
+                {shortLabel}
+              </ToggleButton>
+            ))}
+          </ToggleButtonGroup>
+        </Box>
+      </Box>
+    );
+  }
 
   return (
     <Box
@@ -36,7 +107,6 @@ export default function SessionSidebar({ status, setStatus }) {
       }}
     >
       <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 2.5, pt: 2.5, pb: 1 }}>
-        {/* <img src="/logo.png" alt="" style={{ height: 24, width: 24, display: "block", flexShrink: 0 }} /> */}
         <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1rem" }}>
           Quicklook
         </Typography>

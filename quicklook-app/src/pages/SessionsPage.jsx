@@ -26,6 +26,8 @@ import {
   FormControl,
   InputLabel,
   Select,
+  useMediaQuery,
+  useTheme,
 } from "@mui/material";
 import { useNavigate, useParams } from "react-router-dom";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
@@ -278,6 +280,8 @@ function saveSavedViewsToStorage(projectKey, views) {
 
 export default function SessionsPage() {
   const navigate = useNavigate();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const { projectKey: routeProjectKey } = useParams();
   const projectKey = routeProjectKey || "";
   useEffect(() => {
@@ -557,8 +561,13 @@ export default function SessionsPage() {
   };
 
   return (
-    <Box sx={{ display: "flex", minHeight: "100vh" }}>
-      <SessionSidebar status={status} setStatus={setStatus} />
+    <Box sx={{ display: "flex", flexDirection: isMobile ? "column" : "row", minHeight: "100vh" }}>
+      {/* On mobile: segment menu on top. On desktop: left sidebar. */}
+      {isMobile ? (
+        <SessionSidebar status={status} setStatus={setStatus} placement="top" />
+      ) : (
+        <SessionSidebar status={status} setStatus={setStatus} />
+      )}
 
       <Box sx={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         {/* Top bar: date range, search, + Filter, column filter icon — fixed heights */}
@@ -1211,11 +1220,17 @@ export default function SessionsPage() {
         </Box>
       </Box>
 
-      {/* Filter panel drawer */}
+      {/* Filter panel drawer — ensure it appears above nav (z-index 1100) and other UI */}
       <Drawer
         anchor="left"
         open={filterPanelOpen}
         onClose={() => setFilterPanelOpen(false)}
+        slotProps={{
+          root: { sx: { zIndex: 1300 } },
+        }}
+        ModalProps={{
+          sx: { zIndex: 1300 },
+        }}
         PaperProps={{
           sx: { width: 280, mt: 0, borderRadius: 0 },
         }}

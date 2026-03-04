@@ -13,12 +13,20 @@ import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import VerifyEmailPage from "./pages/VerifyEmailPage";
 import AccountPage from "./pages/AccountPage";
+import PaymentPage from "./pages/PaymentPage";
+import SubscriptionPage from "./pages/SubscriptionPage";
+import BillingPage from "./pages/BillingPage";
+import PaymentSuccessPage from "./pages/PaymentSuccessPage";
+import PaymentCancelPage from "./pages/PaymentCancelPage";
 import NewProjectPage from "./pages/NewProjectPage";
 import ProjectSettingsPage from "./pages/ProjectSettingsPage";
+import PlanManagerPage from "./pages/admin/PlanManagerPage";
 import ProtectedRoute from "./components/ProtectedRoute";
+import AdminRoute from "./components/AdminRoute";
 import MainNavBar, { NAV_WIDTH } from "./components/MainNavBar";
 import VerificationBanner from "./components/VerificationBanner";
-import { Box, CircularProgress } from "@mui/material";
+import UpgradeBanner from "./components/UpgradeBanner";
+import { Box, CircularProgress, useMediaQuery, useTheme } from "@mui/material";
 import { useState, useEffect } from "react";
 import { useAuth } from "./contexts/AuthContext";
 
@@ -131,11 +139,27 @@ function PageTransition({ children }) {
 }
 
 function AppLayout() {
+  const location = useLocation();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const isReplayPage = location.pathname.startsWith("/sessions/");
+  const hideNavOnMobileReplay = isReplayPage && isMobile;
+
   return (
     <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: "background.default" }}>
-      <MainNavBar />
-      <Box component="main" sx={{ flex: 1, minWidth: 0, marginLeft: `${NAV_WIDTH}px`, display: "flex", flexDirection: "column" }}>
-        <VerificationBanner />
+      {!hideNavOnMobileReplay && <MainNavBar />}
+      <Box
+        component="main"
+        sx={{
+          flex: 1,
+          minWidth: 0,
+          marginLeft: hideNavOnMobileReplay ? 0 : `${NAV_WIDTH}px`,
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        {!hideNavOnMobileReplay && <VerificationBanner />}
+        {!hideNavOnMobileReplay && <UpgradeBanner />}
         <Box sx={{ flex: 1, minHeight: 0 }}>
           <Outlet />
         </Box>
@@ -181,6 +205,11 @@ function App() {
         <Route path="/" element={<RootLayout />}>
           <Route index element={<HomePage />} />
           <Route path="account" element={<AccountPage />} />
+          <Route path="account/upgrade" element={<PaymentPage />} />
+          <Route path="account/subscription" element={<SubscriptionPage />} />
+          <Route path="account/billing" element={<BillingPage />} />
+          <Route path="account/payment-success" element={<PaymentSuccessPage />} />
+          <Route path="account/payment-cancel" element={<PaymentCancelPage />} />
           <Route path="projects/new" element={<NewProjectPage />} />
           <Route
             path="projects/:projectKey/sessions"
@@ -238,6 +267,11 @@ function App() {
               </PageTransition>
             }
           />
+          <Route path="admin" element={<AdminRoute><Outlet /></AdminRoute>}>
+            <Route path="plans" element={<PlanManagerPage />} />
+            <Route path="experiments" element={<PlanManagerPage />} />
+            <Route index element={<Navigate to="/admin/plans" replace />} />
+          </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

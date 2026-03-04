@@ -62,14 +62,17 @@ run_production() {
   # App at root (/), API at /api (same-origin)
   echo "VITE_API_BASE_URL=" > "$REPO_ROOT/quicklook-app/.env"
   
-  # Clean Vite cache if locked (dev server running)
-  if [[ -d "$REPO_ROOT/quicklook-app/node_modules/.vite" ]]; then
-    rm -rf "$REPO_ROOT/quicklook-app/node_modules/.vite" 2>/dev/null || {
+  # Clean Vite cache to avoid ENOTEMPTY during npm ci (stale deps_temp_* dirs)
+  local vite_cache="$REPO_ROOT/quicklook-app/node_modules/.vite"
+  if [[ -d "$vite_cache" ]]; then
+    rm -rf "$vite_cache" 2>/dev/null || {
       echo "[release] ERROR: Cannot clean Vite cache. Stop the dev server (Ctrl+C in the terminal running 'npm run dev') and try again."
       exit 1
     }
   fi
-  
+  # Ensure cache is gone right before npm ci (in case it was recreated or rm had no effect)
+  rm -rf "$vite_cache" 2>/dev/null || true
+
   (cd "$REPO_ROOT/quicklook-app" && npm ci --no-audit --no-fund && npm run build)
   cp -r "$REPO_ROOT/quicklook-app/dist"/* "$pub/"
 

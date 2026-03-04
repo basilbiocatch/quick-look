@@ -8,8 +8,41 @@ const userSchema = new mongoose.Schema(
     email: { type: String, required: true, unique: true, index: true, trim: true, lowercase: true },
     passwordHash: { type: String, required: true },
     name: { type: String, default: "", trim: true },
-    plan: { type: String, enum: ["free", "standard", "premium", "enterprise"], default: "free", index: true },
+    plan: { type: String, enum: ["free", "pro", "standard", "premium", "enterprise"], default: "free", index: true },
     sessionCap: { type: Number, default: null },
+    /** Provider-agnostic billing (stripe | recurly) */
+    billing: {
+      provider: { type: String },
+      customerId: { type: String },
+      subscriptionId: { type: String },
+      status: { type: String },
+      priceId: { type: String },
+      interval: { type: String },
+      currentPeriodEnd: { type: Date },
+      cancelAtPeriodEnd: { type: Boolean },
+    },
+    billingProviderPayload: { type: mongoose.Schema.Types.Mixed },
+    couponsUsed: [{
+      couponId: String,
+      code: String,
+      usedAt: Date,
+      subscriptionId: String,
+    }],
+    gracePeriodEnd: { type: Date },
+    previousPlan: { type: String },
+    assignedPlanVariants: {
+      free: String,
+      pro: String,
+      premium: String,
+      enterprise: String,
+    },
+    abTestCohorts: [{
+      experimentId: String,
+      variant: String,
+      assignedAt: Date,
+      planId: String,
+    }],
+    role: { type: String, enum: ["user", "admin"], default: "user" },
     /** Total bytes in GCS (set by cost job when CHUNK_STORAGE=gcs) */
     storageBytes: { type: Number, default: 0 },
     /** Calculated storage cost USD per month */

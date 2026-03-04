@@ -8,6 +8,7 @@ import * as reportsController from "../controllers/reportsController.js";
 import * as abTestController from "../controllers/abTestController.js";
 import * as accuracyController from "../controllers/accuracyController.js";
 import { requireAuth, requireEmailVerified } from "../middleware/jwtAuth.js";
+import { requirePlan } from "../middleware/requirePlan.js";
 import { validateOrigin } from "../middleware/validateOrigin.js";
 import { isDbConnected } from "../db.js";
 
@@ -31,6 +32,12 @@ router.use(requireDb);
 router.get("/projects", requireAuth, quicklookController.getProjects);
 /** Public: SDK loads project config without auth */
 router.get("/projects/:projectKey/config", quicklookController.getProjectConfig);
+/** Public: get or create device ID (used for session correlation and for pricing experiment visitor identity when not logged in) */
+router.post("/device-id", validateOrigin, deviceIdController.postDeviceId);
+/** Public: SDK session recording — no JWT; only validateOrigin (allowed domains) */
+router.post("/sessions/start", validateOrigin, quicklookController.startSession);
+router.post("/sessions/:sessionId/chunk", validateOrigin, quicklookController.saveChunk);
+router.post("/sessions/:sessionId/end", validateOrigin, quicklookController.endSession);
 
 router.use(requireAuth, requireEmailVerified);
 
@@ -39,30 +46,26 @@ router.get("/projects/:projectKey", quicklookController.getProject);
 router.patch("/projects/:projectKey", quicklookController.updateProject);
 router.delete("/projects/:projectKey", quicklookController.deleteProject);
 
-router.post("/device-id", validateOrigin, deviceIdController.postDeviceId);
-router.post("/sessions/start", validateOrigin, quicklookController.startSession);
-router.post("/sessions/:sessionId/chunk", validateOrigin, quicklookController.saveChunk);
-router.post("/sessions/:sessionId/end", validateOrigin, quicklookController.endSession);
-
 router.get("/sessions", quicklookController.getSessions);
 router.get("/sessions/:sessionId", quicklookController.getSession);
 router.get("/sessions/:sessionId/events", quicklookController.getEvents);
-router.get("/sessions/:sessionId/ensure-summary", quicklookController.ensureSummary);
-router.get("/sessions/:sessionId/ensure-root-cause", quicklookController.ensureRootCause);
+router.get("/sessions/:sessionId/chunks", quicklookController.getSessionChunks);
+router.get("/sessions/:sessionId/ensure-summary", requirePlan(["pro"]), quicklookController.ensureSummary);
+router.get("/sessions/:sessionId/ensure-root-cause", requirePlan(["pro"]), quicklookController.ensureRootCause);
 
-router.get("/insights", insightsController.getInsights);
-router.post("/insights/generate", insightsController.postInsightsGenerate);
-router.get("/insights/:insightId", insightsController.getInsightById);
-router.patch("/insights/:insightId", insightsController.patchInsight);
+router.get("/insights", requirePlan(["pro"]), insightsController.getInsights);
+router.post("/insights/generate", requirePlan(["pro"]), insightsController.postInsightsGenerate);
+router.get("/insights/:insightId", requirePlan(["pro"]), insightsController.getInsightById);
+router.patch("/insights/:insightId", requirePlan(["pro"]), insightsController.patchInsight);
 
-router.get("/reports", reportsController.getReports);
-router.get("/reports/:reportId", reportsController.getReportById);
-router.post("/reports/generate", reportsController.postReportsGenerate);
+router.get("/reports", requirePlan(["pro"]), reportsController.getReports);
+router.get("/reports/:reportId", requirePlan(["pro"]), reportsController.getReportById);
+router.post("/reports/generate", requirePlan(["pro"]), reportsController.postReportsGenerate);
 
-router.get("/ab-tests", abTestController.getAbTests);
-router.post("/ab-tests", abTestController.createAbTest);
-router.get("/ab-tests/:testId", abTestController.getAbTestById);
-router.patch("/ab-tests/:testId", abTestController.patchAbTest);
+router.get("/ab-tests", requirePlan(["pro"]), abTestController.getAbTests);
+router.post("/ab-tests", requirePlan(["pro"]), abTestController.createAbTest);
+router.get("/ab-tests/:testId", requirePlan(["pro"]), abTestController.getAbTestById);
+router.patch("/ab-tests/:testId", requirePlan(["pro"]), abTestController.patchAbTest);
 
 router.get("/accuracy-metrics", accuracyController.getAccuracyMetrics);
 router.post("/models/retrain", accuracyController.postModelsRetrain);

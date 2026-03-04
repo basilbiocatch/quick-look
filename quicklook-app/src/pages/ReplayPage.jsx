@@ -13,6 +13,8 @@ import {
   Switch,
   FormControlLabel,
   Snackbar,
+  useMediaQuery,
+  useTheme,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
@@ -26,17 +28,25 @@ import ReplayIcon from "@mui/icons-material/Replay";
 import SkipNextIcon from "@mui/icons-material/SkipNext";
 import CloseIcon from "@mui/icons-material/Close";
 import { useParams, useNavigate } from "react-router-dom";
-import { getSession, getEvents, getSessions, getProject, updateProject, getEnsureSummary } from "../api/quicklookApi";
+import { useAuth } from "../contexts/AuthContext";
+import { getSession, getEventsBatch, getSessions, getProject, updateProject, getEnsureSummary } from "../api/quicklookApi";
 import { getEventsDurationMs, getPagesFromEvents, getEventMarksFromEvents, getEventMarksWithTypes, urlPageKey } from "../utils/activityList";
 import RightPanel from "../components/RightPanel";
 import PlayerControls from "../components/PlayerControls";
 import DevToolsPanel, { getConsoleEvents } from "../components/DevToolsPanel";
+import ProFeatureGate from "../components/ProFeatureGate";
+import EventsLoader from "../components/EventsLoader";
+import ErrorDisplay from "../components/ErrorDisplay";
 import CodeIcon from "@mui/icons-material/Code";
 import Badge from "@mui/material/Badge";
 
 export default function ReplayPage() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const { user } = useAuth();
+  const canAccessDevTools = user?.plan === "pro";
   const playerRef = useRef(null);
   const containerRef = useRef(null);
   const scrollContainerRef = useRef(null);
@@ -44,6 +54,8 @@ export default function ReplayPage() {
   const [events, setEvents] = useState([]);
   const [meta, setMeta] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventsError, setEventsError] = useState(null);
   const [error, setError] = useState("");
   const [currentUrl, setCurrentUrl] = useState("");
   const [currentTime, setCurrentTime] = useState(0);
@@ -62,6 +74,11 @@ export default function ReplayPage() {
   const [summaryError, setSummaryError] = useState("");
   const [relatedSessionsByIp, setRelatedSessionsByIp] = useState([]);
   const [relatedSessionsByDevice, setRelatedSessionsByDevice] = useState([]);
+  const [eventsRetryKey, setEventsRetryKey] = useState(0);
+  const [chunksLoaded, setChunksLoaded] = useState(0);
+  const [totalChunks, setTotalChunks] = useState(0);
+  const [allChunksLoaded, setAllChunksLoaded] = useState(false);
+  const backgroundLoadingRef = useRef(false);
   const countdownRef = useRef(null);
   const countdownIntervalRef = useRef(null);
   const skipMessageTimeoutRef = useRef(null);
@@ -80,88 +97,168 @@ export default function ReplayPage() {
     setSummaryLoading(false);
     setRelatedSessionsByIp([]);
     setRelatedSessionsByDevice([]);
+    setAllChunksLoaded(false);
+    backgroundLoadingRef.current = false;
     (async () => {
       setLoading(true);
       setError("");
+      setEventsError(null);
+      setEventsLoading(false);
       try {
         const sRes = await getSession(sessionId);
         if (cancelled) return;
         const sessionData = sRes.data?.data || null;
         setSession(sessionData);
-
-        const projectKey = sessionData?.projectKey;
-        const eventsPromise = getEvents(sessionId);
-        const sessionsPromise = projectKey
-          ? getSessions({ projectKey, limit: 200, skip: 0 })
-          : Promise.resolve({ data: { data: [] } });
-
-        const [eRes, sessionsRes] = await Promise.all([eventsPromise, sessionsPromise]);
-        if (cancelled) return;
-
-        const ev = eRes.data?.events || [];
-        setEvents(ev);
-        setMeta(eRes.data?.meta || null);
-        const firstMeta = ev.find((e) => e.type === 4);
-        if (firstMeta?.data?.href) setCurrentUrl(firstMeta.data.href);
-
-        if (projectKey && sessionsRes?.data?.data) {
-          const sessions = sessionsRes.data.data;
-          setSessionsList(sessions);
-          const index = sessions.findIndex((s) => s.sessionId === sessionId);
-          setCurrentSessionIndex(index);
+        if (!sessionData) {
+          setLoading(false);
+          return;
         }
 
-        // Related sessions (same IP, same project) for suggestions
-        if (projectKey && sessionData?.ipAddress && !cancelled) {
-          try {
-            const relatedRes = await getSessions({
-              projectKey,
-              ipAddress: sessionData.ipAddress,
-              limit: 50,
-            });
-            if (!cancelled) setRelatedSessionsByIp(relatedRes.data?.data ?? []);
-          } catch {
-            if (!cancelled) setRelatedSessionsByIp([]);
+        // Show page layout immediately; load first batch of events, then continue in background
+        if (!cancelled) setLoading(false);
+        if (!cancelled) setEventsLoading(true);
+
+        const projectKey = sessionData.projectKey;
+        const BATCH_SIZE = 3; // Load 3 chunks at a time for faster initial render
+
+        try {
+          // Load sessions list in parallel with events (don't block on it)
+          const sessionsPromise = projectKey
+            ? getSessions({ projectKey, limit: 200, skip: 0 })
+            : Promise.resolve({ data: { data: [] } });
+
+          // Progressive chunk loading – load first batch to mount player immediately
+          let allEvents = [];
+          let accumulatedMeta = { pages: [], networkEvents: 0, consoleEvents: 0 };
+          let start = 0;
+          let hasMore = true;
+          let firstBatchLoaded = false;
+
+          while (hasMore && !cancelled) {
+            const batchRes = await getEventsBatch(sessionId, start, BATCH_SIZE);
+            if (cancelled) break;
+
+            const data = batchRes.data;
+            const batchEvents = data?.events || [];
+            const batchMeta = data?.meta || {};
+
+            allEvents = [...allEvents, ...batchEvents];
+            if (batchMeta.pages?.length) {
+              accumulatedMeta.pages = [...new Set([...accumulatedMeta.pages, ...batchMeta.pages])];
+            }
+            accumulatedMeta.networkEvents += batchMeta.networkEvents || 0;
+            accumulatedMeta.consoleEvents += batchMeta.consoleEvents || 0;
+
+            if (!cancelled) {
+              setEvents(allEvents);
+              setMeta({
+                chunkCount: batchMeta.totalChunks,
+                eventCount: allEvents.length,
+                pages: accumulatedMeta.pages,
+                networkEvents: accumulatedMeta.networkEvents,
+                consoleEvents: accumulatedMeta.consoleEvents,
+              });
+              setChunksLoaded(start + (batchMeta.returnedChunks || 0));
+              setTotalChunks(batchMeta.totalChunks || 1);
+              
+              // After first batch, hide loader so player can mount and start
+              if (!firstBatchLoaded && allEvents.length > 0) {
+                firstBatchLoaded = true;
+                setEventsLoading(false);
+                const firstMeta = allEvents.find((e) => e.type === 4);
+                if (firstMeta?.data?.href) setCurrentUrl(firstMeta.data.href);
+              }
+            }
+
+            hasMore = batchMeta.hasMore === true;
+            start += batchMeta.returnedChunks ?? 0;
+
+            if (batchMeta.returnedChunks === 0 || !hasMore) {
+              if (!cancelled) setAllChunksLoaded(true);
+              break;
+            }
           }
-        } else if (!cancelled) {
-          setRelatedSessionsByIp([]);
-        }
 
-        // Related sessions (same device, same project)
-        if (projectKey && sessionData?.deviceId && !cancelled) {
-          try {
-            const deviceRes = await getSessions({
-              projectKey,
-              deviceId: sessionData.deviceId,
-              limit: 50,
-            });
-            if (!cancelled) setRelatedSessionsByDevice(deviceRes.data?.data ?? []);
-          } catch {
-            if (!cancelled) setRelatedSessionsByDevice([]);
+          if (!cancelled && !firstBatchLoaded) {
+            setEventsError(null);
+            const firstMeta = allEvents.find((e) => e.type === 4);
+            if (firstMeta?.data?.href) setCurrentUrl(firstMeta.data.href);
           }
-        } else if (!cancelled) {
-          setRelatedSessionsByDevice([]);
+
+          // Sessions list (from parallel or already resolved)
+          const sessionsRes = await sessionsPromise;
+          if (!cancelled && projectKey && sessionsRes?.data?.data) {
+            const sessions = sessionsRes.data.data;
+            setSessionsList(sessions);
+            const index = sessions.findIndex((s) => s.sessionId === sessionId);
+            setCurrentSessionIndex(index);
+          }
+
+          // Related sessions (same IP, same project)
+          if (projectKey && sessionData?.ipAddress && !cancelled) {
+            try {
+              const relatedRes = await getSessions({
+                projectKey,
+                ipAddress: sessionData.ipAddress,
+                limit: 50,
+              });
+              if (!cancelled) setRelatedSessionsByIp(relatedRes.data?.data ?? []);
+            } catch {
+              if (!cancelled) setRelatedSessionsByIp([]);
+            }
+          } else if (!cancelled) {
+            setRelatedSessionsByIp([]);
+          }
+
+          // Related sessions (same device, same project)
+          if (projectKey && sessionData?.deviceId && !cancelled) {
+            try {
+              const deviceRes = await getSessions({
+                projectKey,
+                deviceId: sessionData.deviceId,
+                limit: 50,
+              });
+              if (!cancelled) setRelatedSessionsByDevice(deviceRes.data?.data ?? []);
+            } catch {
+              if (!cancelled) setRelatedSessionsByDevice([]);
+            }
+          } else if (!cancelled) {
+            setRelatedSessionsByDevice([]);
+          }
+        } catch (eventsErr) {
+          if (!cancelled) {
+            setEventsError(eventsErr.response?.data?.error || eventsErr.message || "Failed to load replay");
+            setEvents([]);
+          }
+        } finally {
+          if (!cancelled) {
+            setEventsLoading(false);
+            setChunksLoaded(0);
+            setTotalChunks(0);
+          }
         }
 
-        // On-demand AI summary (analytics): ensure-summary when opening session
+        // On-demand AI summary (analytics): ensure-summary in background so it doesn't block the replay
         setAiSummary(sessionData?.aiSummary ?? null);
         setSummaryError("");
         if (sessionData?.aiSummary) {
           setSummaryLoading(false);
         } else {
           setSummaryLoading(true);
-          try {
-            const sumRes = await getEnsureSummary(sessionId);
-            if (cancelled) return;
-            const data = sumRes.data;
-            setAiSummary(data?.aiSummary ?? null);
-            setSummaryError("");
-          } catch (sumErr) {
-            if (!cancelled) setSummaryError(sumErr.response?.data?.error || sumErr.message || "Summary unavailable");
-            if (!cancelled) setAiSummary(null);
-          } finally {
-            if (!cancelled) setSummaryLoading(false);
-          }
+          getEnsureSummary(sessionId)
+            .then((sumRes) => {
+              if (cancelled) return;
+              const data = sumRes.data;
+              setAiSummary(data?.aiSummary ?? null);
+              setSummaryError("");
+            })
+            .catch((sumErr) => {
+              if (!cancelled) setSummaryError(sumErr.response?.data?.error || sumErr.message || "Summary unavailable");
+              if (!cancelled) setAiSummary(null);
+            })
+            .finally(() => {
+              if (!cancelled) setSummaryLoading(false);
+            });
         }
       } catch (err) {
         if (!cancelled) setError(err.response?.data?.error || err.message || "Failed to load");
@@ -170,7 +267,7 @@ export default function ReplayPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [sessionId]);
+  }, [sessionId, eventsRetryKey]);
 
   const goToPreviousSession = () => {
     if (currentSessionIndex > 0 && sessionsList[currentSessionIndex - 1]) {
@@ -258,7 +355,7 @@ export default function ReplayPage() {
     }
   };
 
-  const handleSeek = (timeMs) => {
+  const handleSeek = async (timeMs) => {
     setCurrentTime(timeMs);
     const totalDuration = durationMs || (session?.duration ?? 0);
     if (totalDuration > 0 && timeMs >= totalDuration - 50) {
@@ -268,6 +365,52 @@ export default function ReplayPage() {
     } else if (showEndOverlay && timeMs < totalDuration - 100) {
       setShowEndOverlay(false);
     }
+    
+    // Check if we need to load more chunks for this seek position
+    if (!allChunksLoaded && events.length > 0) {
+      const lastEventTime = events[events.length - 1]?.timestamp || 0;
+      const firstEventTime = events[0]?.timestamp || 0;
+      const seekTime = firstEventTime + timeMs;
+      
+      // If seeking beyond loaded events, fetch remaining chunks
+      if (seekTime > lastEventTime && chunksLoaded < totalChunks) {
+        const wasPlaying = playing;
+        if (wasPlaying) setPlaying(false);
+        
+        try {
+          // Fetch remaining chunks quickly
+          const BATCH_SIZE = 10; // Larger batch for on-demand loading
+          let start = chunksLoaded;
+          let hasMore = true;
+          
+          while (hasMore && start < totalChunks) {
+            const batchRes = await getEventsBatch(sessionId, start, BATCH_SIZE);
+            const data = batchRes.data;
+            const batchEvents = data?.events || [];
+            const batchMeta = data?.meta || {};
+            
+            const newEvents = [...events, ...batchEvents];
+            setEvents(newEvents);
+            setChunksLoaded(start + (batchMeta.returnedChunks || 0));
+            
+            hasMore = batchMeta.hasMore === true;
+            start += batchMeta.returnedChunks ?? 0;
+            
+            // Check if we've loaded enough for the seek position
+            const newLastEventTime = newEvents[newEvents.length - 1]?.timestamp || 0;
+            if (seekTime <= newLastEventTime || !hasMore) {
+              if (!hasMore) setAllChunksLoaded(true);
+              break;
+            }
+          }
+        } catch (err) {
+          console.error("Failed to load chunks for seek:", err);
+        }
+        
+        if (wasPlaying) setPlaying(true);
+      }
+    }
+    
     try {
       const wrapper = playerRef?.current;
       if (wrapper?.goto) wrapper.goto(timeMs, false);
@@ -427,11 +570,13 @@ export default function ReplayPage() {
     }
   };
 
+  // Player effect: mount with initial events, then use addEvent for incremental updates
   useEffect(() => {
     if (!playerEvents.length || !hasFullSnapshot || !containerRef.current || !session) return;
 
     let mounted = true;
     let playerInstance = null;
+    let lastEventCount = 0;
 
     Promise.all([
       import("rrweb-player"),
@@ -483,6 +628,8 @@ export default function ReplayPage() {
           },
         });
         playerRef.current = playerInstance;
+        lastEventCount = eventsWithProperMeta.length;
+        
         // Force first frame to render and layout (Svelte mounts async; goto(0) paints the initial snapshot)
         requestAnimationFrame(() => {
           if (!mounted || !playerInstance) return;
@@ -518,6 +665,37 @@ export default function ReplayPage() {
       }
     };
   }, [playerEvents, session]);
+
+  // Incremental event updates: use addEvent when new events arrive (without remounting player)
+  const prevEventCountRef = useRef(0);
+  useEffect(() => {
+    const wrapper = playerRef?.current;
+    if (!wrapper || !wrapper.addEvent) return;
+    
+    const currentCount = playerEvents.length;
+    const prevCount = prevEventCountRef.current;
+    
+    if (currentCount > prevCount) {
+      // Add new events to existing player
+      const newEvents = playerEvents.slice(prevCount);
+      const metaEvent = playerEvents.find((e) => e.type === 4);
+      const width = metaEvent?.data?.width || meta?.viewport?.width || session?.meta?.viewport?.width || 1024;
+      const height = metaEvent?.data?.height || meta?.viewport?.height || session?.meta?.viewport?.height || 768;
+      
+      for (const event of newEvents) {
+        try {
+          const patchedEvent = event.type === 4 && (!event.data?.width || !event.data?.height)
+            ? { ...event, data: { ...event.data, width, height } }
+            : event;
+          wrapper.addEvent(patchedEvent);
+        } catch (err) {
+          console.warn("Failed to add event to player:", err);
+        }
+      }
+    }
+    
+    prevEventCountRef.current = currentCount;
+  }, [playerEvents, meta, session]);
 
   // Prevent scroll jumping when user manually scrolls to bottom
   useEffect(() => {
@@ -611,8 +789,8 @@ export default function ReplayPage() {
           display: "flex",
           alignItems: "center",
           gap: 1,
-          px: 2,
-          py: 1.5,
+          px: isMobile ? 1.5 : 2,
+          py: isMobile ? 1 : 1.5,
           flexShrink: 0,
           zIndex: 10,
         }}
@@ -726,7 +904,7 @@ export default function ReplayPage() {
           <Typography variant="caption" sx={{ fontSize: "0.75rem", fontWeight: 500 }}>
             DevTools
           </Typography>
-          {devToolsBadge > 0 && (
+          {devToolsBadge > 0 && canAccessDevTools && (
             <Box
               sx={{
                 minWidth: 18,
@@ -748,15 +926,31 @@ export default function ReplayPage() {
         </Box>
       </Box>
       
-      {/* Main content area */}
-      <Box sx={{ display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}>
-        <Box sx={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
+      {/* Main content area: row on desktop, column on mobile (player then panels) */}
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: isMobile ? "column" : "row",
+          flex: 1,
+          minHeight: 0,
+          overflow: "hidden",
+        }}
+      >
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            flex: 1,
+            minWidth: 0,
+            ...(isMobile && { flex: "0 0 auto", minHeight: 200, maxHeight: "42vh" }),
+          }}
+        >
           {/* URL bar with page index (1/2) and prev/next */}
         <Paper
           elevation={0}
           variant="outlined"
           sx={{
-            mx: 1.5,
+            mx: isMobile ? 1 : 1.5,
             mt: 1,
             borderRadius: 1,
             overflow: "hidden",
@@ -811,7 +1005,7 @@ export default function ReplayPage() {
             minHeight: 0,
             overflow: "hidden",
             position: "relative",
-            mx: 1.5,
+            mx: isMobile ? 1 : 1.5,
             mt: 1,
             mb: 0,
             borderRadius: 1,
@@ -834,10 +1028,12 @@ export default function ReplayPage() {
               position: "relative",
               overscrollBehavior: "contain",
               overscrollBehaviorY: "contain",
+              minHeight: 300,
             }}
           >
             <Box
               ref={containerRef}
+              data-ql-block
               sx={{
                 position: "relative",
                 display: "flex",
@@ -847,8 +1043,43 @@ export default function ReplayPage() {
                 minHeight: 300,
               }}
             />
-            
+            {eventsLoading && (
+              <EventsLoader chunksLoaded={chunksLoaded} totalChunks={totalChunks} />
+            )}
+            {!eventsLoading && !allChunksLoaded && chunksLoaded > 0 && totalChunks > chunksLoaded && (
+              <Box
+                sx={{
+                  position: "absolute",
+                  top: 12,
+                  right: 12,
+                  bgcolor: "rgba(138, 43, 226, 0.9)",
+                  color: "white",
+                  px: 1.5,
+                  py: 0.75,
+                  borderRadius: 1,
+                  fontSize: "0.75rem",
+                  fontWeight: 500,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1,
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+                  zIndex: 5,
+                }}
+              >
+                <CircularProgress size={12} sx={{ color: "white" }} />
+                Loading {chunksLoaded}/{totalChunks} chunks
+              </Box>
+            )}
+            {!eventsLoading && eventsError && (
+              <ErrorDisplay
+                message={eventsError}
+                onRetry={() => setEventsRetryKey((k) => k + 1)}
+                fillAndCenter
+              />
+            )}
             {!loading &&
+              !eventsLoading &&
+              !eventsError &&
               (events.length === 0 ? (
                 <Typography variant="body2" color="text.secondary" sx={{ alignSelf: "center", p: 2 }}>
                   No events recorded for this session.
@@ -864,7 +1095,17 @@ export default function ReplayPage() {
                 </Box>
               ) : null)}
           </Box>
-          <DevToolsPanel open={devToolsOpen} onClose={() => setDevToolsOpen(false)} events={events} />
+          {devToolsOpen && (canAccessDevTools ? (
+            <DevToolsPanel open={devToolsOpen} onClose={() => setDevToolsOpen(false)} events={events} />
+          ) : (
+            <Box sx={{ position: "absolute", bottom: 0, left: 0, right: 0, top: 0, overflow: "auto", p: 2, bgcolor: "background.paper", zIndex: 10 }}>
+              <ProFeatureGate
+                title="DevTools"
+                description="Console logs, network requests, and user context synced with replay. Upgrade to Pro to unlock."
+                compact
+              />
+            </Box>
+          ))}
         </Box>
         {(durationMs > 0 || session.duration != null || session.closedAt) && (
           <PlayerControls
@@ -1049,23 +1290,30 @@ export default function ReplayPage() {
           </Paper>
         </Box>
       )}
-        {/* Right panel: full height from top */}
-        <RightPanel
-          session={session}
-          events={events}
-          meta={meta}
-          onSeek={handleSeek}
-          currentTimeMs={currentTime}
-          excludedUrls={excludedUrls}
-          onExcludeUrl={handleExcludeUrl}
-          onUnexcludeUrl={handleUnexcludeUrl}
-          onSaveExclusions={handleSaveExclusions}
-          aiSummary={aiSummary}
-          summaryLoading={summaryLoading}
-          summaryError={summaryError}
-          relatedSessionsByIp={relatedSessionsByIp}
-          relatedSessionsByDevice={relatedSessionsByDevice}
-        />
+        {/* Right panel: side-by-side on desktop, full-width below player on mobile */}
+        <Box
+          sx={{
+            ...(isMobile && { flex: 1, minHeight: 0, overflow: "auto" }),
+          }}
+        >
+          <RightPanel
+            session={session}
+            events={events}
+            meta={meta}
+            onSeek={handleSeek}
+            currentTimeMs={currentTime}
+            excludedUrls={excludedUrls}
+            onExcludeUrl={handleExcludeUrl}
+            onUnexcludeUrl={handleUnexcludeUrl}
+            onSaveExclusions={handleSaveExclusions}
+            aiSummary={aiSummary}
+            summaryLoading={summaryLoading}
+            summaryError={summaryError}
+            relatedSessionsByIp={relatedSessionsByIp}
+            relatedSessionsByDevice={relatedSessionsByDevice}
+            isMobile={isMobile}
+          />
+        </Box>
       </Box>
       {/* Brief message when "Skip inactivity" jumps over a long gap */}
       <Snackbar

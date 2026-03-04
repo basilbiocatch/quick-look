@@ -26,6 +26,8 @@ import { useNavigate, useParams } from "react-router-dom";
 import LightbulbIcon from "@mui/icons-material/Lightbulb";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
+import { useAuth } from "../contexts/AuthContext";
+import ProFeatureGate from "../components/ProFeatureGate";
 import { getInsights, patchInsight, postInsightsGenerate, createAbTest } from "../api/quicklookApi";
 
 const STATUS_OPTIONS = [
@@ -45,6 +47,7 @@ function formatFrictionType(type) {
 export default function InsightsPage() {
   const { projectKey } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [insights, setInsights] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -80,6 +83,15 @@ export default function InsightsPage() {
     }
     fetchInsights();
   }, [projectKey, statusFilter, fetchInsights, navigate]);
+
+  if (user?.plan !== "pro") {
+    return (
+      <ProFeatureGate
+        title="Insights"
+        description="AI-powered friction patterns, conversion impact, and suggested fixes. Upgrade to Pro to unlock."
+      />
+    );
+  }
 
   const handleGenerate = () => {
     if (!projectKey) return;

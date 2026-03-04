@@ -40,6 +40,26 @@ export class ChunkStorage {
     return docs.map((d) => ({ index: d.index, events: d.events || [] }));
   }
 
+  /**
+   * Get a range of chunks for progressive loading.
+   * @param {string} sessionId
+   * @param {number} start - 0-based start position
+   * @param {number} limit - max chunks to return
+   * @returns {Promise<Array<{ index: number, events: Array }>>}
+   */
+  async getChunksRange(sessionId, start, limit) {
+    if (this.type === "gcs") {
+      return this.gcs.downloadChunkRange(sessionId, start, limit);
+    }
+    const docs = await QuicklookChunk.find({ sessionId })
+      .select("index events")
+      .sort({ index: 1 })
+      .skip(start)
+      .limit(limit)
+      .lean();
+    return docs.map((d) => ({ index: d.index, events: d.events || [] }));
+  }
+
   async deleteChunks(sessionId) {
     if (this.type === "gcs") {
       await this.gcs.deleteChunks(sessionId);

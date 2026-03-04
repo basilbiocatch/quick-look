@@ -19,6 +19,8 @@ import { useNavigate, useParams } from "react-router-dom";
 import AssessmentIcon from "@mui/icons-material/Assessment";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
+import { useAuth } from "../contexts/AuthContext";
+import ProFeatureGate from "../components/ProFeatureGate";
 import { getReports, getReport, postReportsGenerate } from "../api/quicklookApi";
 
 const TYPE_OPTIONS = [
@@ -31,6 +33,7 @@ const TYPE_OPTIONS = [
 export default function ReportsPage() {
   const { projectKey } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -62,6 +65,15 @@ export default function ReportsPage() {
     }
     fetchReports();
   }, [projectKey, typeFilter, fetchReports, navigate]);
+
+  if (user?.plan !== "pro") {
+    return (
+      <ProFeatureGate
+        title="Reports"
+        description="AI-generated weekly and monthly reports on conversion impact and friction. Upgrade to Pro to unlock."
+      />
+    );
+  }
 
   const handleGenerate = (reportType = "weekly") => {
     if (!projectKey) return;

@@ -1,0 +1,26 @@
+{
+  "planId": "free_v1",
+  "tier": "free",
+  "displayName": "Free",
+  "tagline": "Perfect for trying out QuickLook",
+  "active": true,
+  "limits": {
+    "retentionDays": 30,
+    "sessionCap": 1000,
+    "projectLimit": 1
+  },
+  "features": {
+    "recordings": true,
+    "aiTools": false,
+    "devTools": false
+  },
+  "ui": {
+    "description": "Get started with session recording",
+    "featureList": [
+      "30 days data retention",
+      "1,000 sessions per month",
+      "Session recordings",
+      "1 project"
+    ]
+  }
+}

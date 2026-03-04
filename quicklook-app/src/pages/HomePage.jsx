@@ -91,6 +91,17 @@ export default function HomePage() {
             <MenuItem onClick={() => { setMenuAnchor(null); navigate("/account"); }}>
               Account
             </MenuItem>
+            <MenuItem onClick={() => { setMenuAnchor(null); navigate("/account/subscription"); }}>
+              Subscription{user?.plan === "pro" ? " (Pro)" : ""}
+            </MenuItem>
+            <MenuItem onClick={() => { setMenuAnchor(null); navigate("/account/billing"); }}>
+              Billing & Invoices
+            </MenuItem>
+            {user?.role === "admin" && (
+              <MenuItem onClick={() => { setMenuAnchor(null); navigate("/admin/plans"); }}>
+                Admin panel
+              </MenuItem>
+            )}
             <MenuItem onClick={handleLogout}>Sign out</MenuItem>
           </Menu>
         </Box>

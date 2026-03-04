@@ -1,0 +1,20 @@
+{
+  "couponId": "launch50",
+  "code": "LAUNCH50",
+  "active": true,
+  "type": "percentage",
+  "discount": {
+    "percentOff": 50
+  },
+  "stripe": {
+    "couponId": "l6N0Phc2",
+    "promoCodeId": "promo_1T72sf5hFhr4WcIex5Ok7MzB"
+  },
+  "restrictions": {
+    "firstTimeOnly": true,
+    "expiresAt": "2026-04-01T00:00:00Z",
+    "maxRedemptions": 100
+  },
+  "displayName": "Launch Special",
+  "description": "50% off your first month"
+}

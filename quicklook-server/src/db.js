@@ -3,6 +3,9 @@
 import mongoose from "mongoose";
 import logger from "./configs/loggingConfig.js";
 
+// Increase Mongoose operation buffering timeout (default 10s is too short for slow connections)
+mongoose.set("bufferTimeoutMS", 30000); // 30s
+
 const QUICKLOOK_DB = (process.env.QUICKLOOK_DB || "").trim();
 if (!QUICKLOOK_DB || (!QUICKLOOK_DB.startsWith("mongodb://") && !QUICKLOOK_DB.startsWith("mongodb+srv://"))) {
   const msg =
@@ -12,9 +15,9 @@ if (!QUICKLOOK_DB || (!QUICKLOOK_DB.startsWith("mongodb://") && !QUICKLOOK_DB.st
 }
 
 const connectionOptions = {
-  serverSelectionTimeoutMS: 30000,
-  socketTimeoutMS: 45000,
-  connectTimeoutMS: 30000,
+  serverSelectionTimeoutMS: 60000, // 60s (increased from 30s)
+  socketTimeoutMS: 90000, // 90s (increased from 45s)
+  connectTimeoutMS: 60000, // 60s (increased from 30s)
   maxPoolSize: 10,
   minPoolSize: 2,
   retryWrites: true,

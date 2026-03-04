@@ -2,8 +2,9 @@
 "use strict";
 
 /**
- * Mark all existing users as email-verified (one-time migration).
+ * Mark all existing users as email-verified and ensure they have a plan (one-time migration).
  * Run after deploying email verification so current users are not blocked.
+ * Sets plan to "free" only for users who do not already have a plan.
  *
  * Usage (from quicklook-server):
  *   node scripts/seedExistingUsersVerified.js
@@ -25,15 +26,20 @@ async function main() {
   await quicklookConn.asPromise();
   const col = quicklookConn.collection(COLLECTION);
 
-  const result = await col.updateMany(
+  const verifiedResult = await col.updateMany(
     {},
     {
       $set: { emailVerified: true, updatedAt: new Date() },
       $unset: { emailVerificationToken: "", emailVerificationTokenExpires: "" },
     }
   );
+  console.log("Verified:", verifiedResult.modifiedCount, "modified,", verifiedResult.matchedCount, "matched.");
 
-  console.log("Existing users marked as verified:", result.modifiedCount, "modified,", result.matchedCount, "matched.");
+  const planResult = await col.updateMany(
+    { $or: [{ plan: { $exists: false } }, { plan: "" }, { plan: null }] },
+    { $set: { plan: "free", updatedAt: new Date() } }
+  );
+  console.log("Plans: set plan=free for", planResult.modifiedCount, "users (no plan set).");
   await quicklookConn.close();
   process.exit(0);
 }

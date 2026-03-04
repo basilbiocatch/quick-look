@@ -7,6 +7,7 @@ import User from "../models/userModel.js";
 import { JWT_SECRET } from "../middleware/jwtAuth.js";
 import logger from "../configs/loggingConfig.js";
 import { sendWelcomeAndVerificationEmail, sendResetPasswordEmail } from "../services/emailService.js";
+import { assignUserToExperimentFromVisitorId } from "../services/planConfigService.js";
 
 const SALT_ROUNDS = 10;
 const JWT_EXPIRY = "7d";
@@ -28,7 +29,7 @@ function toUserPayload(user) {
 
 export async function register(req, res) {
   try {
-    const { email, password, name } = req.body || {};
+    const { email, password, name, visitorId } = req.body || {};
     const trimmedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
     if (!trimmedEmail) {
       return res.status(400).json({ success: false, error: "Email is required" });
@@ -47,12 +48,19 @@ export async function register(req, res) {
       email: trimmedEmail,
       passwordHash,
       name: typeof name === "string" ? name.trim() : "",
-      sessionCap: null,
+      sessionCap: 1000,
       emailVerified: false,
       emailVerificationToken: verificationToken,
       emailVerificationTokenExpires: verificationExpires,
     });
     await user.save();
+    if (visitorId && typeof visitorId === "string" && visitorId.trim()) {
+      try {
+        await assignUserToExperimentFromVisitorId(user._id.toString(), visitorId.trim());
+      } catch (e) {
+        logger.warn("Assign experiment from visitor failed (user still created)", { error: e.message });
+      }
+    }
     try {
       await sendWelcomeAndVerificationEmail(trimmedEmail, user.name, verificationToken);
     } catch (e) {
@@ -101,17 +109,22 @@ export async function login(req, res) {
 export async function me(req, res) {
   try {
     const user = await User.findById(req.user.userId)
-      .select("email name sessionCap plan emailVerified createdAt")
+      .select("email name sessionCap plan role emailVerified createdAt billing")
       .lean();
     if (!user) {
       return res.status(401).json({ success: false, error: "Unauthorized" });
     }
+    const plan = user.plan || "free";
+    const projectLimit = plan === "pro" ? null : 1;
     const payload = {
       id: user._id.toString(),
       email: user.email,
       name: user.name || "",
       sessionCap: user.sessionCap ?? null,
-      plan: user.plan || "free",
+      plan,
+      role: user.role || "user",
+      subscriptionStatus: user.billing?.status ?? null,
+      projectLimit,
       emailVerified: Boolean(user.emailVerified),
       createdAt: user.createdAt?.toISOString?.() || null,
     };

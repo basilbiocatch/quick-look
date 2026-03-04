@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Box,
   Paper,
@@ -10,6 +10,7 @@ import {
   Link as MuiLink,
 } from "@mui/material";
 import { useAuth } from "../contexts/AuthContext";
+import { getOrCreateDeviceId } from "../api/quicklookApi.js";
 import { getPublicAssetUrl } from "../utils/baseUrl";
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -22,9 +23,18 @@ export default function SignupPage() {
   const [submitting, setSubmitting] = useState(false);
   const { signup, user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const planPro = searchParams.get("plan") === "pro";
+  const coupon = searchParams.get("coupon") || "";
 
   if (user) {
-    navigate("/", { replace: true });
+    if (planPro) {
+      const params = new URLSearchParams({ from: "pricing" });
+      if (coupon) params.set("coupon", coupon);
+      navigate(`/account/upgrade?${params.toString()}`, { replace: true });
+    } else {
+      navigate("/", { replace: true });
+    }
     return null;
   }
 
@@ -36,14 +46,22 @@ export default function SignupPage() {
       return;
     }
     setSubmitting(true);
+    const deviceId = await getOrCreateDeviceId();
     const result = await signup({
       email: email.trim(),
       password,
       name: name.trim() || undefined,
+      visitorId: deviceId || undefined,
     });
     setSubmitting(false);
     if (result.success) {
-      navigate("/", { replace: true });
+      if (planPro) {
+        const params = new URLSearchParams({ from: "pricing" });
+        if (coupon) params.set("coupon", coupon);
+        navigate(`/account/upgrade?${params.toString()}`, { replace: true });
+      } else {
+        navigate("/", { replace: true });
+      }
     } else {
       setError(result.error || "Registration failed");
     }
@@ -77,9 +95,15 @@ export default function SignupPage() {
             Quicklook
           </Typography>
         </Box>
-        <Typography variant="h6" fontWeight={600} sx={{ mb: 3, textAlign: "center", color: "text.secondary" }}>
+        <Typography variant="h6" fontWeight={600} sx={{ mb: 1, textAlign: "center", color: "text.secondary" }}>
           Create account
         </Typography>
+        {planPro && (
+          <Typography variant="body2" sx={{ mb: 3, textAlign: "center", color: "primary.main" }}>
+            You&apos;ll complete payment for Pro on the next step.
+          </Typography>
+        )}
+        {!planPro && <Box sx={{ mb: 3 }} />}
         {error && (
           <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError("")}>
             {error}

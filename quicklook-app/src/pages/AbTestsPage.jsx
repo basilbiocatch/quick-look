@@ -23,6 +23,8 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 import ScienceIcon from "@mui/icons-material/Science";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import { useAuth } from "../contexts/AuthContext";
+import ProFeatureGate from "../components/ProFeatureGate";
 import { getAbTests, patchAbTest } from "../api/quicklookApi";
 
 const STATUS_OPTIONS = [
@@ -35,6 +37,7 @@ const STATUS_OPTIONS = [
 export default function AbTestsPage() {
   const { projectKey } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [tests, setTests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -73,6 +76,15 @@ export default function AbTestsPage() {
     }
     fetchTests();
   }, [projectKey, statusFilter, fetchTests, navigate]);
+
+  if (user?.plan !== "pro") {
+    return (
+      <ProFeatureGate
+        title="A/B Tests"
+        description="Run experiments with suggested fixes and predicted lift. Upgrade to Pro to create and manage A/B tests."
+      />
+    );
+  }
 
   const handleStatusChange = (testId, status) => {
     setPatching(true);

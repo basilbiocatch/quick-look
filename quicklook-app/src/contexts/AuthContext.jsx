@@ -7,12 +7,16 @@ const FREE_PLAN_VERIFICATION_GRACE_DAYS = 2;
 
 function userFromData(data) {
   if (!data) return null;
+  const plan = data.plan || "free";
   return {
     id: data.id,
     email: data.email,
     name: data.name || "",
     sessionCap: data.sessionCap ?? null,
-    plan: data.plan || "free",
+    plan,
+    role: data.role || "user",
+    subscriptionStatus: data.subscriptionStatus ?? null,
+    projectLimit: data.projectLimit !== undefined ? data.projectLimit : (plan === "pro" ? null : 1),
     emailVerified: Boolean(data.emailVerified),
     createdAt: data.createdAt || null,
   };
