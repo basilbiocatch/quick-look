@@ -27,6 +27,6 @@ root.render(
 // Prevent FOUC: show body only after first paint with styles (MUI/Emotion inject on render)
 requestAnimationFrame(() => {
   requestAnimationFrame(() => {
-    document.body.style.visibility = "visible";
+    document.body.classList.add("ready");
   });
 });

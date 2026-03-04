@@ -32,7 +32,8 @@
     <!-- Prevent FOUC: hide body until app has painted with styles (see main.jsx) -->
     <style>
       html { background-color: #0d0d0d; }
-      body { visibility: hidden; }
+      body { visibility: hidden !important; opacity: 0 !important; }
+      body.ready { visibility: visible !important; opacity: 1 !important; transition: opacity 0.1s ease-in; }
     </style>
   </head>
   <body>
