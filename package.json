@@ -1,0 +1,7 @@
+{
+  "name": "quick-look",
+  "private": true,
+  "scripts": {
+    "support-chat:setup": "npm run support-chat:setup --prefix quicklook-server"
+  }
+}

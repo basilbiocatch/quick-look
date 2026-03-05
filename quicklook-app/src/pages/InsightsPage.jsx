@@ -26,6 +26,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import LightbulbIcon from "@mui/icons-material/Lightbulb";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
+import ScienceIcon from "@mui/icons-material/Science";
 import { useAuth } from "../contexts/AuthContext";
 import ProFeatureGate from "../components/ProFeatureGate";
 import { getInsights, patchInsight, postInsightsGenerate, createAbTest } from "../api/quicklookApi";
@@ -227,6 +228,13 @@ export default function InsightsPage() {
           </Button>
           <Button variant="outlined" startIcon={<RefreshIcon />} onClick={fetchInsights} disabled={loading}>
             Refresh
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<ScienceIcon />}
+            onClick={() => navigate(`/projects/${projectKey}/ab-tests`)}
+          >
+            A/B Tests
           </Button>
         </Box>
       </Box>

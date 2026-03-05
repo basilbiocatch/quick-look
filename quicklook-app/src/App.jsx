@@ -28,6 +28,7 @@ import AdminRoute from "./components/AdminRoute";
 import MainNavBar, { NAV_WIDTH } from "./components/MainNavBar";
 import VerificationBanner from "./components/VerificationBanner";
 import UpgradeBanner from "./components/UpgradeBanner";
+import SupportChatBubble from "./components/SupportChatBubble";
 import { Box, CircularProgress, useMediaQuery, useTheme } from "@mui/material";
 import { useState, useEffect } from "react";
 import { useAuth } from "./contexts/AuthContext";
@@ -201,6 +202,7 @@ function RootLayout() {
 function App() {
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
+      <SupportChatBubble />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />

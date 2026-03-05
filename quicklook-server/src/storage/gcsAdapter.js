@@ -94,12 +94,12 @@ export class GcsAdapter {
       timeout: 300000, // 5 minutes timeout for upload
       resumable: compressed.length > 2 * 1024 * 1024, // Use resumable upload for chunks >2MB (more reliable)
     });
-    logger.info("GCS upload", {
-      bucket: this.bucketName,
-      path,
-      owner: tags.owner || "(none)",
-      sizeBytes: compressed.length,
-    });
+    // logger.info("GCS upload", {
+    //   bucket: this.bucketName,
+    //   path,
+    //   owner: tags.owner || "(none)",
+    //   sizeBytes: compressed.length,
+    // });
   }
 
   /**

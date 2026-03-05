@@ -18,6 +18,7 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import ScienceIcon from "@mui/icons-material/Science";
 import Button from "@mui/material/Button";
 import PsychologyIcon from "@mui/icons-material/Psychology";
 import { useAuth } from "../contexts/AuthContext";
@@ -91,17 +92,26 @@ export default function AccuracyPage() {
             Accuracy metrics
           </Typography>
         </Box>
-        <Button variant="outlined" startIcon={<RefreshIcon />} onClick={fetchMetrics} disabled={loading}>
-          Refresh
-        </Button>
-        <Button
-          variant="outlined"
-          startIcon={retraining ? <CircularProgress size={16} /> : <PsychologyIcon />}
-          onClick={handleRetrain}
-          disabled={retraining}
-        >
-          {retraining ? "Retraining…" : "Retrain model"}
-        </Button>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <Button
+            variant="outlined"
+            startIcon={<ScienceIcon />}
+            onClick={() => navigate(`/projects/${projectKey}/ab-tests`)}
+          >
+            A/B Tests
+          </Button>
+          <Button variant="outlined" startIcon={<RefreshIcon />} onClick={fetchMetrics} disabled={loading}>
+            Refresh
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={retraining ? <CircularProgress size={16} /> : <PsychologyIcon />}
+            onClick={handleRetrain}
+            disabled={retraining}
+          >
+            {retraining ? "Retraining…" : "Retrain model"}
+          </Button>
+        </Box>
       </Box>
       {retrainMessage && (
         <Alert severity="info" onClose={() => setRetrainMessage(null)} sx={{ mb: 2 }}>

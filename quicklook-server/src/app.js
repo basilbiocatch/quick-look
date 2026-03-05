@@ -14,6 +14,7 @@ import authRoutes from "./routes/authRoutes.js";
 import subscriptionRoutes from "./routes/subscriptionRoutes.js";
 import configRoutes from "./routes/configRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
+import supportChatRoutes from "./routes/supportChatRoutes.js";
 import { requireAuth } from "./middleware/jwtAuth.js";
 import { stripeBillingWebhook } from "./controllers/webhookController.js";
 import { startQuicklookRetentionJob, startAutoCloseInactiveSessionsJob } from "./jobs/quicklookRetention.js";
@@ -81,6 +82,7 @@ app.use("/api/quicklook", quicklookRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
 app.use("/api/config", configRoutes);
 app.use("/api/admin", requireAuth, adminRoutes);
+app.use("/api/support-chat", supportChatRoutes);
 
 app.get("/health", (req, res) => {
   res.status(200).json({ ok: true, service: "quicklook-server" });

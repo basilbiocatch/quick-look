@@ -263,12 +263,12 @@ export const QuicklookService = {
       await sessionDoc.save();
     }
     const destination = CHUNK_STORAGE_BACKEND === "gcs" ? "GCP Cloud Storage" : "MongoDB";
-    logger.info(`quicklook chunk saved → ${destination}`, {
-      sessionId: sessionId?.slice(0, 8),
-      index,
-      eventCount: events.length,
-      storage: CHUNK_STORAGE_BACKEND,
-    });
+    // logger.info(`quicklook chunk saved → ${destination}`, {
+    //   sessionId: sessionId?.slice(0, 8),
+    //   index,
+    //   eventCount: events.length,
+    //   storage: CHUNK_STORAGE_BACKEND,
+    // });
     return { success: true };
   },
 

@@ -16,7 +16,6 @@ import VideocamIcon from "@mui/icons-material/Videocam";
 import LightbulbIcon from "@mui/icons-material/Lightbulb";
 import AssessmentIcon from "@mui/icons-material/Assessment";
 import ScienceIcon from "@mui/icons-material/Science";
-import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import SettingsIcon from "@mui/icons-material/Settings";
 import FolderIcon from "@mui/icons-material/Folder";
 import AddIcon from "@mui/icons-material/Add";
@@ -66,7 +65,6 @@ export default function MainNavBar() {
   const isInsightsActive = Boolean(routeProjectKey && pathname.includes("/insights"));
   const isReportsActive = Boolean(routeProjectKey && pathname.includes("/reports"));
   const isAbTestsActive = Boolean(routeProjectKey && pathname.includes("/ab-tests"));
-  const isAccuracyActive = Boolean(routeProjectKey && pathname.includes("/accuracy"));
   const isAccountActive = pathname === "/account";
 
   const selectedProject = projectKey ? projects.find((p) => p.projectKey === projectKey) : null;
@@ -267,29 +265,6 @@ export default function MainNavBar() {
             }}
           >
             <ScienceIcon />
-          </IconButton>
-        </Tooltip>
-      </Box>
-
-      {/* Accuracy — visible for all; upgrade message on page for Free */}
-      <Box sx={{ display: "flex", justifyContent: "center", py: 0.5 }}>
-        <Tooltip title={isPro ? "Accuracy" : "Accuracy (Pro — upgrade to access)"} placement="right">
-          <IconButton
-            onClick={(e) => {
-              if (projectKey) navigate(`/projects/${projectKey}/accuracy`);
-              else setProjectMenuAnchor(e.currentTarget);
-            }}
-            sx={{
-              ...iconButtonSx,
-              ...(isAccuracyActive && {
-                color: "#fff",
-                bgcolor: "rgba(255,255,255,0.18)",
-                "&:hover": { bgcolor: "rgba(255,255,255,0.22)" },
-              }),
-              "& .MuiSvgIcon-root": { fontSize: 24 },
-            }}
-          >
-            <TrendingUpIcon />
           </IconButton>
         </Tooltip>
       </Box>

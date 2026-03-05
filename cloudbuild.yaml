@@ -40,8 +40,9 @@ steps:
       # Update only these vars so existing QUICKLOOK_DB and JWT_SECRET (set in Console or via gcloud) are preserved.
       # First deploy: set QUICKLOOK_DB and JWT_SECRET in Console or: gcloud run services update quicklook-server --region=... --update-env-vars=QUICKLOOK_DB=...,JWT_SECRET=...
       # AWS_SECRET_ACCESS_KEY from Secret Manager (create once: quicklook-server/scripts/setup-aws-secret.sh).
+      # Support chat: set OPENAI_API_KEY in Console or Secret Manager; IDs below are from setupSupportChatAssistant.js.
       - "--update-env-vars"
-      - "CHUNK_STORAGE=gcs,GCS_BUCKET=quicklook-chunks,GCP_PROJECT_ID=${PROJECT_ID},AWS_ACCESS_KEY_ID=AKIAJFGG6OFLTWBHBUZQ,AWS_REGION=us-east-1,SES_FROM=noreply@quicklook.io"
+      - "CHUNK_STORAGE=gcs,GCS_BUCKET=quicklook-chunks,GCP_PROJECT_ID=${PROJECT_ID},AWS_ACCESS_KEY_ID=AKIAJFGG6OFLTWBHBUZQ,AWS_REGION=us-east-1,SES_FROM=noreply@quicklook.io,OPENAI_ASSISTANT_ID=asst_q9uWv5FDE6xt5nHQgZ6SVXXm,OPENAI_VECTOR_STORE_ID=vs_69aa0025d4f88191b1fa478c05c0f9db"
       - "--set-secrets=AWS_SECRET_ACCESS_KEY=aws-secret-access-key:latest"
     id: "deploy"
     waitFor: ["push"]

@@ -18,8 +18,9 @@ function getClient() {
 export async function sendEmail({ to, subject, text, html }) {
   const client = getClient();
   if (!client) {
-    logger.warn("Email not sent (AWS_REGION not set):", { to, subject: subject?.slice(0, 50) });
-    return false;
+    const msg = "AWS SES not configured (set AWS_REGION in .env)";
+    logger.warn(msg, { to, subject: subject?.slice(0, 50) });
+    throw new Error(msg);
   }
   try {
     const body = html ? { Html: { Data: html, Charset: "UTF-8" } } : { Text: { Data: text || "", Charset: "UTF-8" } };
@@ -58,6 +59,51 @@ export async function sendWelcomeAndVerificationEmail(email, name, token) {
 </body>
 </html>`;
   return sendEmail({ to: email, subject, text, html });
+}
+
+/**
+ * Notify the team when support chat escalates (frustrated customer, refund request, needs more help).
+ * Sends to SUPPORT_ESCALATION_EMAIL or basil.farraj@gmail.com.
+ */
+export async function sendSupportEscalationEmail({ reason, summary, threadId }) {
+  const to = process.env.SUPPORT_ESCALATION_EMAIL || "basil.farraj@gmail.com";
+  logger.info("Support escalation: sending email", { to, reason, threadId: threadId?.slice(0, 8) });
+  const reasonLabel =
+    reason === "refund_request"
+      ? "Refund request"
+      : reason === "frustrated"
+        ? "Frustrated customer"
+        : "Needs more help";
+  const subject = `[QuickLook Support] ${reasonLabel}`;
+  const body = [
+    `QuickLook support chat escalation`,
+    ``,
+    `Reason: ${reasonLabel}`,
+    summary ? `Summary: ${summary}` : null,
+    threadId ? `Thread ID: ${threadId}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const html = `
+<!DOCTYPE html>
+<html>
+<body style="font-family: sans-serif; line-height: 1.5; color: #333;">
+  <p><strong>QuickLook support chat escalation</strong></p>
+  <p><strong>Reason:</strong> ${reasonLabel}</p>
+  ${summary ? `<p><strong>Summary:</strong> ${escapeHtml(summary)}</p>` : ""}
+  ${threadId ? `<p><strong>Thread ID:</strong> <code>${escapeHtml(threadId)}</code></p>` : ""}
+  <p>— QuickLook Support</p>
+</body>
+</html>`;
+  return sendEmail({ to, subject, text: body, html });
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 /** Forgot password: send reset link */

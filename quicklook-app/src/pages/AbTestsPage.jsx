@@ -23,6 +23,7 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 import ScienceIcon from "@mui/icons-material/Science";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import { useAuth } from "../contexts/AuthContext";
 import ProFeatureGate from "../components/ProFeatureGate";
 import { getAbTests, patchAbTest } from "../api/quicklookApi";
@@ -167,6 +168,13 @@ export default function AbTestsPage() {
           </FormControl>
           <Button variant="outlined" startIcon={<RefreshIcon />} onClick={fetchTests} disabled={loading}>
             Refresh
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<TrendingUpIcon />}
+            onClick={() => navigate(`/projects/${projectKey}/accuracy`)}
+          >
+            Accuracy metrics
           </Button>
         </Box>
       </Box>
