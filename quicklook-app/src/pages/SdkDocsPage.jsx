@@ -17,16 +17,19 @@ const CodeBlock = ({ children, ...sx }) => (
   <Box
     component="pre"
     sx={{
-      p: 2,
-      borderRadius: 1,
-      bgcolor: "action.hover",
+      p: 2.5,
+      borderRadius: 2,
+      bgcolor: "rgba(0,0,0,0.35)",
       border: "1px solid",
-      borderColor: "divider",
-      fontFamily: "monospace",
-      fontSize: "0.8125rem",
+      borderColor: "rgba(138, 43, 226, 0.15)",
+      fontFamily: "ui-monospace, 'SF Mono', Monaco, 'Cascadia Mono', monospace",
+      fontSize: "0.875rem",
+      lineHeight: 1.6,
       overflow: "auto",
       whiteSpace: "pre-wrap",
       wordBreak: "break-word",
+      color: "rgba(255,255,255,0.92)",
+      boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
       ...sx,
     }}
   >
@@ -35,8 +38,8 @@ const CodeBlock = ({ children, ...sx }) => (
 );
 
 const Section = ({ title, children }) => (
-  <Box sx={{ mb: 4 }}>
-    <Typography variant="h6" fontWeight={700} sx={{ mb: 1.5 }}>
+  <Box sx={{ mb: 5 }}>
+    <Typography variant="h6" fontWeight={700} sx={{ mb: 2, color: "rgba(255,255,255,0.95)" }}>
       {title}
     </Typography>
     {children}
@@ -47,38 +50,89 @@ export default function SdkDocsPage() {
   const navigate = useNavigate();
 
   return (
-    <Box sx={{ minHeight: "100vh", bgcolor: "background.default", p: 3 }}>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 3 }}>
-        <IconButton onClick={() => navigate(-1)} size="small" aria-label="Back">
-          <ArrowBackIcon fontSize="small" />
-        </IconButton>
-        <CodeIcon sx={{ fontSize: 28, color: "primary.main" }} />
-        <Typography variant="h5" fontWeight={700}>
-          QuickLook SDK — JavaScript integration
-        </Typography>
-      </Box>
+    <Box
+      sx={{
+        minHeight: "100vh",
+        background: "linear-gradient(165deg, #0d0b12 0%, #15121a 35%, #1a1625 70%, #0f0d14 100%)",
+        p: { xs: 3, sm: 4, md: 5 },
+        position: "relative",
+        "&::before": {
+          content: '""',
+          position: "absolute",
+          top: 0,
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: "min(100%, 1100px)",
+          height: 320,
+          background: "radial-gradient(ellipse 80% 60% at 50% 0%, rgba(138, 43, 226, 0.12) 0%, transparent 60%)",
+          pointerEvents: "none",
+        },
+      }}
+    >
+      <Box
+        sx={{
+          position: "relative",
+          maxWidth: 1024,
+          mx: "auto",
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 4 }}>
+          <IconButton
+            onClick={() => navigate(-1)}
+            size="small"
+            aria-label="Back"
+            sx={{
+              color: "rgba(255,255,255,0.7)",
+              "&:hover": { color: "rgba(200, 162, 255, 0.9)", bgcolor: "rgba(138, 43, 226, 0.12)" },
+            }}
+          >
+            <ArrowBackIcon fontSize="small" />
+          </IconButton>
+          <Box
+            sx={{
+              width: 44,
+              height: 44,
+              borderRadius: 2,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "linear-gradient(135deg, rgba(138, 43, 226, 0.25) 0%, rgba(75, 0, 130, 0.2) 100%)",
+              border: "1px solid rgba(138, 43, 226, 0.3)",
+              boxShadow: "0 0 24px rgba(138, 43, 226, 0.15)",
+            }}
+          >
+            <CodeIcon sx={{ fontSize: 24, color: "rgba(200, 162, 255, 0.95)" }} />
+          </Box>
+          <Typography variant="h4" fontWeight={700} sx={{ color: "rgba(255,255,255,0.98)", letterSpacing: "-0.02em" }}>
+            QuickLook SDK — JavaScript integration
+          </Typography>
+        </Box>
 
       <Paper
         elevation={0}
         sx={{
-          maxWidth: 720,
+          maxWidth: 1024,
           mx: "auto",
-          p: 4,
+          p: { xs: 3, sm: 4, md: 5 },
           border: "1px solid",
-          borderColor: "divider",
-          borderRadius: 2,
+          borderColor: "rgba(138, 43, 226, 0.18)",
+          borderRadius: 3,
+          bgcolor: "rgba(22, 20, 30, 0.6)",
+          backdropFilter: "blur(12px)",
+          boxShadow: "0 4px 24px rgba(0,0,0,0.25), 0 0 0 1px rgba(255,255,255,0.03) inset",
         }}
       >
-        <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+        <Box sx={{ "& .MuiTypography-root": { color: "rgba(255,255,255,0.82)" }, "& code": { color: "rgba(200, 162, 255, 0.9)", bgcolor: "rgba(138, 43, 226, 0.12)", px: 0.5, py: 0.25, borderRadius: 1, fontSize: "0.9em" } }}>
+        <Typography variant="body1" sx={{ mb: 4, color: "rgba(255,255,255,0.78)", lineHeight: 1.7 }}>
           This guide explains how to add the QuickLook session recording SDK to your website with JavaScript and view recordings in the QuickLook dashboard.
         </Typography>
 
         <Section title="1. Get your project key">
-          <Typography variant="body2" paragraph>
+          <Typography variant="body2" paragraph sx={{ lineHeight: 1.7 }}>
             In the dashboard, create a project (or open an existing one) and go to{" "}
             <strong>Project → Settings → Integration</strong>. Your <strong>Project ID</strong> is the project key you will pass to the SDK. You can also copy the ready-made script from the Integration tab.
           </Typography>
-          <Typography variant="body2">
+          <Typography variant="body2" sx={{ lineHeight: 1.7 }}>
             If you haven’t created a project yet: from the home page click <strong>New project</strong>, name it, then go to the Integration tab to get the snippet and your project key.
           </Typography>
         </Section>
@@ -87,10 +141,9 @@ export default function SdkDocsPage() {
           <Typography variant="body2" paragraph>
             Add the SDK script to your HTML (e.g. in <code>&lt;head&gt;</code> or before <code>&lt;/body&gt;</code>). Load it with <code>async</code> so it doesn’t block the page.
           </Typography>
-          <CodeBlock>{`<script src="https://your-quicklook-server.com/quicklook-sdk.js" async></script>
+          <CodeBlock>{`<script src="https://quick.ook.io/quicklook-sdk.js" async></script>
 <!-- Optional: serve compress.worker.js from the same origin, or pass workerUrl in init -->`}</CodeBlock>
           <Typography variant="body2" sx={{ mt: 1 }}>
-            Replace <code>your-quicklook-server.com</code> with your QuickLook API base URL (e.g. <code>https://quicklook.io</code> for production or <code>http://localhost:3080</code> for local development).
           </Typography>
         </Section>
 
@@ -106,7 +159,7 @@ export default function SdkDocsPage() {
   });
 </script>`}</CodeBlock>
           <Typography variant="body2" sx={{ mt: 1 }}>
-            For <strong>local development</strong>, point <code>apiUrl</code> to your local server (e.g. <code>http://localhost:3080</code>). Recordings will still show in the same dashboard project when the server is configured to use the same backend.
+            Sessions will appear under that project in the dashboard.
           </Typography>
         </Section>
 
@@ -116,14 +169,9 @@ export default function SdkDocsPage() {
           </Typography>
           <CodeBlock>{`window.quicklook("init", "YOUR_PROJECT_KEY", {
   apiUrl: "https://quicklook.io",
-  retentionDays: 30,
-  captureStorage: false,
   workerUrl: "/path/to/compress.worker.js",  // or false to disable compression
   excludedUrls: ["/privacy", "/admin"],       // do not record on these URL substrings
   includedUrls: ["/checkout", "/pricing"],   // only record on these (if set, others are ignored)
-  inactivityTimeout: 300000,                  // 5 min (ms); 0 = disable
-  pauseOnHidden: true,                       // pause when tab is hidden
-  maxSessionDuration: 3600000,               // 60 min (ms); 0 = no limit
   region: "eu"                                // custom keys are stored on the session
 });`}</CodeBlock>
           <Typography variant="body2" sx={{ mt: 1 }}>
@@ -154,7 +202,7 @@ export default function SdkDocsPage() {
             </ListItem>
             <ListItem sx={{ py: 0.25 }}>
               <ListItemText
-                primary={<><code>identify({ firstName?, lastName?, email?, ...custom })</code> — Set user identity.</>}
+                primary={<><code>{"identify({ firstName?, lastName?, email?, ...custom })"}</code> — Set user identity.</>}
                 primaryTypographyProps={{ variant: "body2" }}
               />
             </ListItem>
@@ -202,15 +250,12 @@ export default function SdkDocsPage() {
           </List>
         </Section>
 
-        <Section title="8. Local development">
+        <Section title="8. Self‑hosted / local development (optional)">
           <Typography variant="body2" paragraph>
-            Run your QuickLook server locally (e.g. on port 3080) and use:
+            Only if you run your own QuickLook server (e.g. on-prem or local dev): set <code>apiUrl</code> to that server’s URL. For production websites, use the default QuickLook API (<code>https://quicklook.io</code>) and do not set <code>apiUrl</code> to localhost.
           </Typography>
-          <CodeBlock>{`window.quicklook("init", "YOUR_PROJECT_KEY", {
-  apiUrl: "http://localhost:3080"
-});`}</CodeBlock>
           <Typography variant="body2">
-            Ensure <code>quicklook-sdk.js</code> and <code>compress.worker.js</code> are served by your server (or set <code>workerUrl</code>). Sessions will appear in the same dashboard when the app is pointed at that server.
+            Ensure <code>quicklook-sdk.js</code> and <code>compress.worker.js</code> are served by your server (or set <code>workerUrl</code>). Sessions will appear in the dashboard when the app is pointed at that server.
           </Typography>
         </Section>
 
@@ -233,15 +278,10 @@ export default function SdkDocsPage() {
 </html>`}</CodeBlock>
         </Section>
 
-        <Box sx={{ mt: 4, pt: 2, borderTop: 1, borderColor: "divider" }}>
-          <Typography variant="body2" color="text.secondary">
-            For more details (SPA routing, inactivity, session limits), see the <code>quicklook-sdk/README.md</code> in the project repo. To get your project key and copy the integration snippet, go to{" "}
-            <Link component="button" variant="body2" onClick={() => navigate("/")} sx={{ verticalAlign: "baseline" }}>
-              Dashboard → Project → Settings → Integration
-            </Link>.
-          </Typography>
+      
         </Box>
       </Paper>
+      </Box>
     </Box>
   );
 }

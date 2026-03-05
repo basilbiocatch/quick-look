@@ -409,6 +409,14 @@ export default function MainNavBar() {
         >
           Billing & Invoices
         </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setAccountMenuAnchor(null);
+            navigate("/docs/sdk");
+          }}
+        >
+          Documentation
+        </MenuItem>
         {user?.role === "admin" && (
           <MenuItem
             onClick={() => {

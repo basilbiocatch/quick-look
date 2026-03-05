@@ -81,6 +81,9 @@ export default function HomePage() {
             <MenuItem onClick={() => { setMenuAnchor(null); navigate("/account/billing"); }}>
               Billing & Invoices
             </MenuItem>
+            <MenuItem onClick={() => { setMenuAnchor(null); navigate("/docs/sdk"); }}>
+              Documentation
+            </MenuItem>
             {user?.role === "admin" && (
               <MenuItem onClick={() => { setMenuAnchor(null); navigate("/admin/plans"); }}>
                 Admin panel
