@@ -21,6 +21,7 @@ import PaymentCancelPage from "./pages/PaymentCancelPage";
 import NewProjectPage from "./pages/NewProjectPage";
 import ProjectSettingsPage from "./pages/ProjectSettingsPage";
 import SdkDocsPage from "./pages/SdkDocsPage";
+import PublicReplayPage from "./pages/PublicReplayPage";
 import PlanManagerPage from "./pages/admin/PlanManagerPage";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AdminRoute from "./components/AdminRoute";
@@ -278,6 +279,7 @@ function App() {
             <Route index element={<Navigate to="/admin/plans" replace />} />
           </Route>
         </Route>
+        <Route path="/share/:shareToken" element={<PublicReplayPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Box>

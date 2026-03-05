@@ -82,12 +82,16 @@ const sessionSchema = new mongoose.Schema(
     goalEvents: [{ type: String }],
     aiProcessed: { type: Boolean, index: true },
     aiProcessedAt: { type: Date },
+    /** Public share: optional token for unauthenticated viewing. When set, session is readable via GET /public/share/:shareToken */
+    shareToken: { type: String, sparse: true, unique: true },
+    shareExpiresAt: { type: Date },
   },
   { collection: "quicklook_sessions", versionKey: false }
 );
 
 sessionSchema.index({ projectKey: 1, createdAt: -1 });
 sessionSchema.index({ aiProcessed: 1, status: 1, closedAt: -1 });
+sessionSchema.index({ shareToken: 1 }, { sparse: true });
 
 sessionSchema.pre("save", function () {
   if (this.isNew && this.retentionDays) {

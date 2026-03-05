@@ -499,3 +499,73 @@ export const ensureRootCause = async (req, res) => {
     return res.status(500).json({ success: false, error: message });
   }
 };
+
+/** Create public share link for a session. Returns { shareToken, shareUrl, shareExpiresAt }. */
+export const createShare = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const session = await QuicklookService.getSessionById(sessionId);
+    if (!session) {
+      return res.status(404).json({ success: false, error: "Session not found" });
+    }
+    const project = await getProjectForUser(session.projectKey, req.user.userId, res);
+    if (!project) return;
+    const result = await QuicklookService.createShareToken(sessionId, req.user.userId, 7);
+    if (!result) {
+      return res.status(500).json({ success: false, error: "Failed to create share link" });
+    }
+    const baseUrl = (req.protocol + "://" + req.get("host") + (req.baseUrl || "")).replace(/\/api\/quicklook$/, "");
+    const shareUrl = `${baseUrl}/share/${result.shareToken}`;
+    return res.json({
+      success: true,
+      data: { shareToken: result.shareToken, shareUrl, shareExpiresAt: result.shareExpiresAt },
+    });
+  } catch (err) {
+    logger.error("quicklook createShare", { error: err.message });
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+/** Revoke public share for a session. */
+export const revokeShare = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const session = await QuicklookService.getSessionById(sessionId);
+    if (!session) {
+      return res.status(404).json({ success: false, error: "Session not found" });
+    }
+    const project = await getProjectForUser(session.projectKey, req.user.userId, res);
+    if (!project) return;
+    const ok = await QuicklookService.revokeShareToken(sessionId, req.user.userId);
+    if (!ok) {
+      return res.status(500).json({ success: false, error: "Failed to revoke share link" });
+    }
+    return res.json({ success: true, data: { revoked: true } });
+  } catch (err) {
+    logger.error("quicklook revokeShare", { error: err.message });
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+/** Public: get session + events by share token (no auth). */
+export const getPublicShare = async (req, res) => {
+  try {
+    const { shareToken } = req.params;
+    const session = await QuicklookService.getSessionByShareToken(shareToken);
+    if (!session) {
+      return res.status(404).json({ success: false, error: "Share link not found or expired" });
+    }
+    const eventsResult = await QuicklookService.getSessionEvents(session.sessionId);
+    return res.json({
+      success: true,
+      data: {
+        session: { ...session, shareToken: undefined },
+        events: eventsResult.events,
+        meta: eventsResult.meta,
+      },
+    });
+  } catch (err) {
+    logger.error("quicklook getPublicShare", { error: err.message });
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};

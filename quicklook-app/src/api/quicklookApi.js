@@ -77,6 +77,13 @@ export const getEnsureSummary = (sessionId) => api.get(`/sessions/${sessionId}/e
 /** On-demand root cause for friction points (analytics). Returns { frictionPoints, generated }. */
 export const getEnsureRootCause = (sessionId) => api.get(`/sessions/${sessionId}/ensure-root-cause`);
 
+/** Create public share link for a session. Returns { shareToken, shareUrl, shareExpiresAt }. */
+export const createShare = (sessionId) => api.post(`/sessions/${sessionId}/share`);
+/** Revoke public share for a session. */
+export const revokeShare = (sessionId) => api.delete(`/sessions/${sessionId}/share`);
+/** Public: get session + events by share token (no auth). Returns { data: { session, events, meta } }. */
+export const getPublicShare = (shareToken) => api.get(`/public/share/${encodeURIComponent(shareToken)}`);
+
 export const getInsights = (projectKey, params) =>
   api.get("/insights", { params: { projectKey, ...params } });
 export const getInsight = (insightId) => api.get(`/insights/${insightId}`);

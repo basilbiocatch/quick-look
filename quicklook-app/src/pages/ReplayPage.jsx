@@ -15,8 +15,13 @@ import {
   Snackbar,
   useMediaQuery,
   useTheme,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import ShareIcon from "@mui/icons-material/Share";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
@@ -29,7 +34,7 @@ import SkipNextIcon from "@mui/icons-material/SkipNext";
 import CloseIcon from "@mui/icons-material/Close";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { getSession, getEvents, getSessions, getProject, updateProject, getEnsureSummary } from "../api/quicklookApi";
+import { getSession, getEvents, getSessions, getProject, updateProject, getEnsureSummary, createShare, revokeShare } from "../api/quicklookApi";
 import { getEventsDurationMs, getPagesFromEvents, getEventMarksFromEvents, getEventMarksWithTypes, urlPageKey } from "../utils/activityList";
 import RightPanel from "../components/RightPanel";
 import PlayerControls from "../components/PlayerControls";
@@ -76,6 +81,10 @@ export default function ReplayPage() {
   const [relatedSessionsByIp, setRelatedSessionsByIp] = useState([]);
   const [relatedSessionsByDevice, setRelatedSessionsByDevice] = useState([]);
   const [eventsRetryKey, setEventsRetryKey] = useState(0);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [shareUrl, setShareUrl] = useState("");
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareError, setShareError] = useState("");
   const countdownRef = useRef(null);
   const countdownIntervalRef = useRef(null);
   const skipMessageTimeoutRef = useRef(null);
@@ -175,6 +184,52 @@ export default function ReplayPage() {
     })();
     return () => { cancelled = true; };
   }, [sessionId, eventsRetryKey]);
+
+  const buildShareUrl = (token) => {
+    if (typeof window === "undefined" || !token) return "";
+    const base = window.location.pathname.replace(/\/sessions\/[^/]+.*$/, "") || "/";
+    return `${window.location.origin}${base.replace(/\/$/, "")}/share/${token}`;
+  };
+
+  const handleOpenShareDialog = async () => {
+    setShareDialogOpen(true);
+    setShareError("");
+    const hasValidShare = session?.shareToken && (!session?.shareExpiresAt || new Date(session.shareExpiresAt) > new Date());
+    if (hasValidShare) {
+      setShareUrl(buildShareUrl(session.shareToken));
+      setShareLoading(false);
+      return;
+    }
+    setShareLoading(true);
+    setShareUrl("");
+    try {
+      const res = await createShare(sessionId);
+      const token = res.data?.data?.shareToken;
+      if (token) {
+        setShareUrl(buildShareUrl(token));
+        setSession((s) => (s ? { ...s, shareToken: token, shareExpiresAt: res.data?.data?.shareExpiresAt } : null));
+      } else {
+        setShareError("Failed to create share link");
+      }
+    } catch (err) {
+      setShareError(err.response?.data?.error || err.message || "Failed to create share link");
+    } finally {
+      setShareLoading(false);
+    }
+  };
+
+  const handleCopyShareLink = () => {
+    if (shareUrl) navigator.clipboard.writeText(shareUrl);
+  };
+
+  const handleRevokeShare = async () => {
+    if (!sessionId) return;
+    try {
+      await revokeShare(sessionId);
+      setSession((s) => (s ? { ...s, shareToken: null, shareExpiresAt: null } : null));
+      setShareUrl("");
+    } catch (_) {}
+  };
 
   const handleGenerateSummary = () => {
     if (!sessionId || summaryLoading) return;
@@ -721,6 +776,24 @@ export default function ReplayPage() {
         )}
         
         <Box sx={{ flex: 1 }} />
+
+        <Tooltip title={session?.shareToken ? "Copy share link" : "Share recording publicly"}>
+          <Button
+            onClick={handleOpenShareDialog}
+            startIcon={<ShareIcon />}
+            sx={{
+              textTransform: "none",
+              color: "primary.main",
+              bgcolor: "rgba(0, 0, 0, 0.04)",
+              borderRadius: 2,
+              px: 1.5,
+              py: 0.75,
+              "&:hover": { bgcolor: "rgba(0, 0, 0, 0.08)" },
+            }}
+          >
+            Share
+          </Button>
+        </Tooltip>
         
         <Box
           component="button"
@@ -1156,6 +1229,51 @@ export default function ReplayPage() {
         autoHideDuration={2500}
         onClose={() => setSkippedInactivityMsg(null)}
       />
+      <Dialog open={shareDialogOpen} onClose={() => setShareDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Share recording</DialogTitle>
+        <DialogContent>
+          {shareLoading && (
+            <Box display="flex" justifyContent="center" py={2}>
+              <CircularProgress size={32} />
+            </Box>
+          )}
+          {!shareLoading && shareError && (
+            <Alert severity="error" sx={{ mt: 1 }}>{shareError}</Alert>
+          )}
+          {!shareLoading && shareUrl && (
+            <TextField
+              fullWidth
+              size="small"
+              label="Public link"
+              value={shareUrl}
+              readOnly
+              sx={{ mt: 1 }}
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton onClick={handleCopyShareLink} aria-label="Copy link" size="small">
+                      <ContentCopyIcon />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
+          )}
+          {!shareLoading && shareUrl && (
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+              Anyone with this link can view the recording. Link expires in 7 days.
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          {shareUrl && (
+            <Button color="error" onClick={handleRevokeShare}>
+              Revoke link
+            </Button>
+          )}
+          <Button onClick={() => setShareDialogOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

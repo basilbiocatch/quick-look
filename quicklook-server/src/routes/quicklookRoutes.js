@@ -40,6 +40,9 @@ router.post("/sessions/:sessionId/chunk", validateOrigin, quicklookController.sa
 router.post("/sessions/:sessionId/end", validateOrigin, quicklookController.endSession);
 router.post("/sessions/:sessionId/identify", validateOrigin, quicklookController.updateSessionIdentify);
 
+/** Public: view shared recording by token (no auth) */
+router.get("/public/share/:shareToken", quicklookController.getPublicShare);
+
 router.use(requireAuth, requireEmailVerified);
 
 router.post("/projects", quicklookController.createProject);
@@ -53,6 +56,8 @@ router.get("/sessions/:sessionId/events", quicklookController.getEvents);
 router.get("/sessions/:sessionId/chunks", quicklookController.getSessionChunks);
 router.get("/sessions/:sessionId/ensure-summary", requirePlan(["pro"]), quicklookController.ensureSummary);
 router.get("/sessions/:sessionId/ensure-root-cause", requirePlan(["pro"]), quicklookController.ensureRootCause);
+router.post("/sessions/:sessionId/share", quicklookController.createShare);
+router.delete("/sessions/:sessionId/share", quicklookController.revokeShare);
 
 router.get("/insights", requirePlan(["pro"]), insightsController.getInsights);
 router.post("/insights/generate", requirePlan(["pro"]), insightsController.postInsightsGenerate);

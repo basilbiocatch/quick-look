@@ -639,4 +639,43 @@ export const QuicklookService = {
     logger.info("quicklook auto-close inactive sessions", { closedCount, inactivityTimeoutMs });
     return { closed: closedCount };
   },
+
+  /** Create or refresh a public share token for a session. Caller must own the project. */
+  async createShareToken(sessionId, userId, expiresInDays = 7) {
+    const session = await QuicklookSession.findOne({ sessionId }).select("projectKey").lean();
+    if (!session) return null;
+    const project = await QuicklookProject.findOne({ projectKey: session.projectKey }).select("owner").lean();
+    if (!project || String(project.owner) !== String(userId)) return null;
+    const crypto = await import("crypto");
+    const shareToken = crypto.randomBytes(24).toString("base64url");
+    const shareExpiresAt = new Date(Date.now() + expiresInDays * 86400000);
+    await QuicklookSession.updateOne(
+      { sessionId },
+      { $set: { shareToken, shareExpiresAt } }
+    );
+    return { shareToken, shareExpiresAt };
+  },
+
+  /** Revoke public share for a session. Caller must own the project. */
+  async revokeShareToken(sessionId, userId) {
+    const session = await QuicklookSession.findOne({ sessionId }).select("projectKey").lean();
+    if (!session) return false;
+    const project = await QuicklookProject.findOne({ projectKey: session.projectKey }).select("owner").lean();
+    if (!project || String(project.owner) !== String(userId)) return false;
+    await QuicklookSession.updateOne(
+      { sessionId },
+      { $unset: { shareToken: "", shareExpiresAt: "" } }
+    );
+    return true;
+  },
+
+  /** Get session by share token for public viewing. Returns null if token invalid or expired. */
+  async getSessionByShareToken(shareToken) {
+    if (!shareToken || typeof shareToken !== "string") return null;
+    const session = await QuicklookSession.findOne({
+      shareToken: shareToken.trim(),
+      $or: [{ shareExpiresAt: { $exists: false } }, { shareExpiresAt: { $gt: new Date() } }],
+    }).lean();
+    return session;
+  },
 };
