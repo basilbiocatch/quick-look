@@ -20,6 +20,7 @@ import PaymentSuccessPage from "./pages/PaymentSuccessPage";
 import PaymentCancelPage from "./pages/PaymentCancelPage";
 import NewProjectPage from "./pages/NewProjectPage";
 import ProjectSettingsPage from "./pages/ProjectSettingsPage";
+import SdkDocsPage from "./pages/SdkDocsPage";
 import PlanManagerPage from "./pages/admin/PlanManagerPage";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AdminRoute from "./components/AdminRoute";
@@ -29,6 +30,7 @@ import UpgradeBanner from "./components/UpgradeBanner";
 import { Box, CircularProgress, useMediaQuery, useTheme } from "@mui/material";
 import { useState, useEffect } from "react";
 import { useAuth } from "./contexts/AuthContext";
+import { ProjectsProvider } from "./contexts/ProjectsContext";
 
 function PageTransition({ children }) {
   const location = useLocation();
@@ -187,9 +189,11 @@ function RootLayout() {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
   return (
-    <AppLayout>
-      <Outlet />
-    </AppLayout>
+    <ProjectsProvider>
+      <AppLayout>
+        <Outlet />
+      </AppLayout>
+    </ProjectsProvider>
   );
 }
 
@@ -211,6 +215,7 @@ function App() {
           <Route path="account/payment-success" element={<PaymentSuccessPage />} />
           <Route path="account/payment-cancel" element={<PaymentCancelPage />} />
           <Route path="projects/new" element={<NewProjectPage />} />
+          <Route path="docs/sdk" element={<SdkDocsPage />} />
           <Route
             path="projects/:projectKey/sessions"
             element={

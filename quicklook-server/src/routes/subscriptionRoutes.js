@@ -9,6 +9,10 @@ const router = express.Router();
 router.use(requireAuth);
 
 router.post("/create-checkout", subscriptionController.createCheckout);
+router.post("/confirm-checkout", subscriptionController.confirmCheckout);
+router.get("/confirm-checkout", subscriptionController.confirmCheckout);
+router.post("/sync", subscriptionController.syncSubscription);
+router.get("/sync", subscriptionController.syncSubscription);
 router.post("/validate-coupon", subscriptionController.validateCoupon);
 router.get("/status", subscriptionController.getStatus);
 router.post("/create-portal", subscriptionController.createPortal);

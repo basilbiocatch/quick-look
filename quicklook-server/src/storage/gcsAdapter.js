@@ -155,20 +155,177 @@ export class GcsAdapter {
     return { index, events };
   }
 
-  /** Max concurrent chunk downloads per batch to avoid ECONNRESET / connection exhaustion */
-  static DOWNLOAD_BATCH_SIZE = 12;
+  /** Max concurrent chunk downloads per batch */
+  static DOWNLOAD_BATCH_SIZE = 50;
 
   /**
-   * List and download all chunks for a session, sorted by index.
-   * Uses paginated list and batched downloads to avoid ECONNRESET on long sessions.
+   * Download all events for a session. Tries merged file first (single download),
+   * falls back to individual chunks if no merged file exists.
    * @param {string} sessionId
+   * @param {number} [chunkCount] - if known, avoids listing when falling back to chunks
    * @returns {Promise<Array<{ index: number, events: Array }>>}
    */
-  async downloadChunks(sessionId) {
+  async downloadChunks(sessionId, chunkCount) {
+    // Try merged file first (single GCS download = fast)
+    const merged = await this._downloadMergedFile(sessionId);
+    if (merged) return merged;
+
+    // No merged file — download individual chunks
+    if (chunkCount && chunkCount > 0) {
+      const chunks = await this._downloadChunksByIndex(sessionId, chunkCount);
+      // Merge in background for next time (don't block the response)
+      this._mergeChunksInBackground(sessionId, chunks);
+      return chunks;
+    }
     const fileList = await this._listChunkFilesPaginated(sessionId);
+    const chunks = await this._downloadFileList(fileList, sessionId);
+    if (chunks.length > 0) {
+      this._mergeChunksInBackground(sessionId, chunks);
+    }
+    return chunks;
+  }
+
+  /**
+   * Try to download the pre-merged events file.
+   * Returns array of {index, events} with a single entry, or null if not found.
+   */
+  async _downloadMergedFile(sessionId) {
+    const path = `${sessionId}/events-merged.json.gz`;
+    const file = this.bucket.file(path);
+    try {
+      const [exists] = await file.exists();
+      if (!exists) return null;
+      const [contents] = await file.download({ timeout: 60000 });
+      let allEvents;
+      try {
+        const decompressed = zlib.gunzipSync(contents);
+        allEvents = JSON.parse(decompressed.toString("utf8"));
+      } catch {
+        allEvents = JSON.parse(contents.toString("utf8"));
+      }
+      logger.info("GCS merged file download", {
+        sessionId: sessionId?.slice(0, 8),
+        events: allEvents.length,
+        sizeKB: (contents.length / 1024).toFixed(1),
+      });
+      return [{ index: 0, events: allEvents }];
+    } catch (err) {
+      if (err.code === 404) return null;
+      logger.warn("GCS merged file download failed, falling back to chunks", {
+        sessionId: sessionId?.slice(0, 8),
+        error: err.message,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Merge chunks into a single file in the background (fire-and-forget).
+   * Writes {sessionId}/events-merged.json.gz so next load is a single download.
+   */
+  _mergeChunksInBackground(sessionId, chunks) {
+    setImmediate(async () => {
+      try {
+        const allEvents = [];
+        const sorted = [...chunks].sort((a, b) => a.index - b.index);
+        for (const c of sorted) {
+          if (Array.isArray(c.events)) allEvents.push(...c.events);
+        }
+        if (allEvents.length === 0) return;
+
+        const json = JSON.stringify(allEvents);
+        const compressed = zlib.gzipSync(Buffer.from(json, "utf8"));
+        const path = `${sessionId}/events-merged.json.gz`;
+        const file = this.bucket.file(path);
+        await file.save(compressed, {
+          metadata: {
+            contentType: "application/json",
+            contentEncoding: "gzip",
+            metadata: { sessionId: String(sessionId), mergedAt: new Date().toISOString() },
+          },
+          resumable: compressed.length > 2 * 1024 * 1024,
+        });
+        logger.info("GCS merged file created", {
+          sessionId: sessionId?.slice(0, 8),
+          events: allEvents.length,
+          compressedKB: (compressed.length / 1024).toFixed(1),
+        });
+      } catch (err) {
+        logger.warn("GCS merge failed (non-critical)", {
+          sessionId: sessionId?.slice(0, 8),
+          error: err.message,
+        });
+      }
+    });
+  }
+
+  /**
+   * Download chunks directly by index without listing.
+   * Much faster: skips the 5-15s GCS list API call.
+   */
+  async _downloadChunksByIndex(sessionId, chunkCount) {
+    const batchSize = GcsAdapter.DOWNLOAD_BATCH_SIZE;
+    const chunks = [];
+
+    for (let i = 0; i < chunkCount; i += batchSize) {
+      const end = Math.min(i + batchSize, chunkCount);
+      const batch = [];
+      for (let idx = i; idx < end; idx++) {
+        batch.push(this._downloadChunkByIndex(sessionId, idx));
+      }
+      const results = await Promise.allSettled(batch);
+      for (const r of results) {
+        if (r.status === "fulfilled" && r.value) chunks.push(r.value);
+      }
+    }
+
+    chunks.sort((a, b) => a.index - b.index);
+    logger.debug("GCS download (by index)", {
+      bucket: this.bucketName,
+      sessionId: sessionId?.slice(0, 8),
+      requested: chunkCount,
+      downloaded: chunks.length,
+    });
+    return chunks;
+  }
+
+  /**
+   * Download a single chunk by known path (no listing needed).
+   */
+  async _downloadChunkByIndex(sessionId, index) {
+    const path = `${sessionId}/chunk-${index}.json.gz`;
+    const file = this.bucket.file(path);
+    try {
+      const [contents] = await file.download({ timeout: 30000 });
+      let events;
+      try {
+        const decompressed = zlib.gunzipSync(contents);
+        events = JSON.parse(decompressed.toString("utf8"));
+      } catch (err) {
+        if (err.message && err.message.includes("incorrect header check")) {
+          events = JSON.parse(contents.toString("utf8"));
+        } else {
+          throw err;
+        }
+      }
+      return { index, events };
+    } catch (err) {
+      if (err.code === 404) return null;
+      logger.error("GCS download chunk by index failed", {
+        sessionId: sessionId?.slice(0, 8),
+        index,
+        error: err.message,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Download from an already-fetched file list.
+   */
+  async _downloadFileList(fileList, sessionId) {
     const chunks = [];
     const batchSize = GcsAdapter.DOWNLOAD_BATCH_SIZE;
-
     for (let i = 0; i < fileList.length; i += batchSize) {
       const batch = fileList.slice(i, i + batchSize);
       const batchResults = await Promise.all(
@@ -176,7 +333,6 @@ export class GcsAdapter {
       );
       chunks.push(...batchResults);
     }
-
     chunks.sort((a, b) => a.index - b.index);
     logger.debug("GCS download", {
       bucket: this.bucketName,

@@ -16,8 +16,14 @@ async function getProjectForUser(projectKey, userId, res) {
     res.status(404).json({ success: false, error: "Project not found" });
     return null;
   }
-  if (project.owner !== userId) {
-    res.status(403).json({ success: false, error: "Forbidden" });
+  const ownerStr = project.owner != null ? String(project.owner) : "";
+  const userIdStr = userId != null ? String(userId) : "";
+  if (ownerStr !== userIdStr) {
+    res.status(403).json({
+      success: false,
+      error: "You don't have access to this project.",
+      code: "FORBIDDEN_PROJECT",
+    });
     return null;
   }
   return project;
@@ -63,6 +69,18 @@ export const saveChunk = async (req, res) => {
     if (!sessionId) {
       return res.status(200).json({ success: false, error: "sessionId required" });
     }
+    
+    const chunkSize = JSON.stringify(data).length;
+    if (chunkSize > 200000) {
+      logger.warn("Large chunk detected", {
+        sessionId: sessionId?.slice(0, 8),
+        index,
+        sizeChars: chunkSize,
+        sizeKB: (chunkSize / 1024).toFixed(1),
+        eventCount: Array.isArray(data) ? data.length : 0,
+      });
+    }
+    
     await QuicklookService.saveChunk({ sessionId, index, data, compressed });
     return res.status(200).json({ success: true });
   } catch (err) {
@@ -86,9 +104,27 @@ export const endSession = async (req, res) => {
   }
 };
 
+export const updateSessionIdentify = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { user } = req.body || {};
+    if (!sessionId) {
+      return res.status(200).json({ success: false, error: "sessionId required" });
+    }
+    if (!user || typeof user !== "object") {
+      return res.status(200).json({ success: false, error: "user object required" });
+    }
+    const result = await QuicklookService.updateSessionUser(sessionId, user);
+    return res.status(200).json(result);
+  } catch (err) {
+    logger.error("quicklook updateSessionIdentify", { error: err.message });
+    return res.status(200).json({ success: false, error: err.message });
+  }
+};
+
 export const getSessions = async (req, res) => {
   try {
-    const { projectKey, status, from, to, limit, skip, ipAddress, deviceId } = req.query;
+    const { projectKey, status, from, to, limit, skip, ipAddress, deviceId, userEmail } = req.query;
     if (!projectKey) {
       return res.status(400).json({ success: false, error: "projectKey is required" });
     }
@@ -103,6 +139,7 @@ export const getSessions = async (req, res) => {
       skip: skip ? parseInt(skip, 10) : 0,
       ipAddress: ipAddress || undefined,
       deviceId: deviceId || undefined,
+      userEmail: userEmail || undefined,
     });
     return res.json(result);
   } catch (err) {
@@ -181,7 +218,7 @@ export const getProjects = async (req, res) => {
   try {
     const projects = await QuicklookProject.find({ owner: req.user.userId })
       .sort({ createdAt: -1 })
-      .select("projectId projectKey name allowedDomains excludedUrls retentionDays createdAt updatedAt")
+      .select("projectId projectKey name allowedDomains excludedUrls retentionDays createdAt updatedAt thumbnailUrl")
       .lean();
     return res.json({ success: true, data: projects });
   } catch (err) {
@@ -228,6 +265,7 @@ export const getProject = async (req, res) => {
         excludedUrls: project.excludedUrls || [],
         retentionDays: project.retentionDays,
         deviceIdEnabled: Boolean(project.deviceIdEnabled),
+        thumbnailUrl: project.thumbnailUrl || null,
         createdAt: project.createdAt,
         updatedAt: project.updatedAt,
       },
@@ -244,7 +282,7 @@ export const updateProject = async (req, res) => {
     const { projectKey } = req.params;
     const project = await getProjectForUser(projectKey, req.user.userId, res);
     if (!project) return;
-    const { name, allowedDomains, excludedUrls, deviceIdEnabled } = req.body || {};
+    const { name, allowedDomains, excludedUrls, deviceIdEnabled, thumbnailUrl } = req.body || {};
     const update = { updatedAt: new Date() };
     if (typeof name === "string" && name.trim()) update.name = name.trim();
     if (Array.isArray(allowedDomains)) {
@@ -254,6 +292,7 @@ export const updateProject = async (req, res) => {
       update.excludedUrls = excludedUrls.map((u) => String(u).trim()).filter(Boolean);
     }
     if (typeof deviceIdEnabled === "boolean") update.deviceIdEnabled = deviceIdEnabled;
+    if (thumbnailUrl !== undefined) update.thumbnailUrl = thumbnailUrl === null || thumbnailUrl === "" ? null : String(thumbnailUrl);
     // Note: retentionDays is not updatable - it's set automatically based on user's plan
     await QuicklookProject.updateOne({ projectKey }, { $set: update });
     const updated = await QuicklookProject.findOne({ projectKey }).lean();
@@ -267,6 +306,7 @@ export const updateProject = async (req, res) => {
         excludedUrls: updated.excludedUrls || [],
         retentionDays: updated.retentionDays,
         deviceIdEnabled: Boolean(updated.deviceIdEnabled),
+        thumbnailUrl: updated.thumbnailUrl || null,
         createdAt: updated.createdAt,
         updatedAt: updated.updatedAt,
       },
@@ -377,15 +417,31 @@ export const ensureSummary = async (req, res) => {
       });
     }
     const url = `${base.replace(/\/$/, "")}/session/${encodeURIComponent(sessionId)}/ensure-summary`;
+    logger.info("ensureSummary proxy", { url });
     const response = await fetch(url);
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      const text = await response.text().catch(() => "");
+      logger.error("ensureSummary: analytics returned non-JSON", { status: response.status, url, body: text.slice(0, 500) });
+      return res.status(response.status >= 400 ? response.status : 502).json({
+        success: false,
+        error: `Analytics returned ${response.status} (non-JSON). Is QUICKLOOK_ANALYTICS_URL (${base}) correct and running?`,
+      });
+    }
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      return res.status(response.status).json(data || { success: false, error: "Analytics request failed" });
+      return res.status(response.status).json({
+        success: false,
+        error: data?.error || data?.detail || `Analytics returned ${response.status}`,
+        ...data,
+      });
     }
     return res.json(data);
   } catch (err) {
-    logger.error("quicklook ensureSummary", { error: err.message });
-    return res.status(500).json({ success: false, error: err.message });
+    const cause = err.cause?.message || err.cause?.code || err.message;
+    logger.error("quicklook ensureSummary", { error: err.message, cause });
+    const message = err.message === "fetch failed" && cause ? `fetch failed: ${cause}` : err.message;
+    return res.status(500).json({ success: false, error: message });
   }
 };
 
@@ -418,13 +474,28 @@ export const ensureRootCause = async (req, res) => {
       url += "?force=1";
     }
     const response = await fetch(url);
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      const text = await response.text().catch(() => "");
+      logger.error("ensureRootCause: analytics returned non-JSON", { status: response.status, url, body: text.slice(0, 500) });
+      return res.status(response.status >= 400 ? response.status : 502).json({
+        success: false,
+        error: `Analytics returned ${response.status} (non-JSON). Is QUICKLOOK_ANALYTICS_URL (${base}) correct and running?`,
+      });
+    }
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      return res.status(response.status).json(data || { success: false, error: "Analytics request failed" });
+      return res.status(response.status).json({
+        success: false,
+        error: data?.error || data?.detail || `Analytics returned ${response.status}`,
+        ...data,
+      });
     }
     return res.json(data);
   } catch (err) {
-    logger.error("quicklook ensureRootCause", { error: err.message });
-    return res.status(500).json({ success: false, error: err.message });
+    const cause = err.cause?.message || err.cause?.code || err.message;
+    logger.error("quicklook ensureRootCause", { error: err.message, cause });
+    const message = err.message === "fetch failed" && cause ? `fetch failed: ${cause}` : err.message;
+    return res.status(500).json({ success: false, error: message });
   }
 };

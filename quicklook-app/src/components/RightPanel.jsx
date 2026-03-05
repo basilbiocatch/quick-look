@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
   Box,
   Typography,
@@ -51,6 +51,7 @@ import { buildActivityList, getPagesFromEvents, urlPageKey } from "../utils/acti
 import { format } from "date-fns";
 import PropertyRow from "./PropertyRow";
 import ErrorDisplay from "./ErrorDisplay";
+import { getSessions } from "../api/quicklookApi";
 
 function getApiBase() {
   const base = import.meta.env.VITE_API_BASE_URL;
@@ -155,12 +156,17 @@ export default function RightPanel({
   aiSummary = null,
   summaryLoading = false,
   summaryError = "",
+  summaryUpgradeRequired = false,
+  onGenerateSummary,
   relatedSessionsByIp = [],
   relatedSessionsByDevice = [],
   isMobile = false,
 }) {
   const navigate = useNavigate();
   const [relatedTab, setRelatedTab] = useState(0);
+  const [relatedSessionsByUser, setRelatedSessionsByUser] = useState([]);
+  const [relatedSessionsByUserLoading, setRelatedSessionsByUserLoading] = useState(false);
+  const relatedByUserFetchedRef = useRef(false);
   const [activitySearch, setActivitySearch] = useState("");
   const [setupDialogOpen, setSetupDialogOpen] = useState(false);
   const [setupIntegrationMode, setSetupIntegrationMode] = useState("developer");
@@ -185,6 +191,27 @@ export default function RightPanel({
   if (!session) return null;
 
   const user = session.user || {};
+  const hasUserIdentity = Boolean(user?.email);
+
+  // Reset "by user" state when session changes
+  useEffect(() => {
+    relatedByUserFetchedRef.current = false;
+    setRelatedSessionsByUser([]);
+    if (!hasUserIdentity && relatedTab === 2) setRelatedTab(0);
+  }, [session?.sessionId, hasUserIdentity]);
+
+  // Load related sessions by user only when "By User" tab is selected (on demand)
+  useEffect(() => {
+    if (relatedTab !== 2 || !hasUserIdentity || !session?.projectKey || !user?.email || relatedByUserFetchedRef.current) return;
+    relatedByUserFetchedRef.current = true;
+    setRelatedSessionsByUserLoading(true);
+    getSessions({ projectKey: session.projectKey, userEmail: user.email, limit: 50 })
+      .then((res) => {
+        setRelatedSessionsByUser(res.data?.data ?? []);
+      })
+      .catch(() => setRelatedSessionsByUser([]))
+      .finally(() => setRelatedSessionsByUserLoading(false));
+  }, [relatedTab, hasUserIdentity, session?.projectKey, user?.email]);
   const m = session.meta || {};
   const eventCount = meta?.eventCount ?? events?.length ?? 0;
   const device = parseDevice(m.userAgent);
@@ -195,12 +222,8 @@ export default function RightPanel({
   const setupSnippet = session.projectKey && apiBase
     ? `<script src="${apiBase}/quicklook-sdk.js" async></script>
 <script>
-  quicklook('init', {
-    apiUrl: '${apiBase}',
-    projectKey: '${session.projectKey}'
-  });
-  // Optional: identify user
-  // quicklook('setIdentity', { email: 'user@example.com', firstName: 'Jane' });
+  quicklook('init', '${session.projectKey}', { apiUrl: '${apiBase}' });
+  // Optional: quicklook('identify', { email: 'user@example.com', firstName: 'Jane' });
 </script>`
     : "";
 
@@ -248,6 +271,8 @@ ${setupSnippet}`
       sx={{
         width: isMobile ? "100%" : 340,
         minWidth: isMobile ? 0 : 340,
+        flex: 1,
+        minHeight: 0,
         overflow: "auto",
         bgcolor: "background.paper",
         display: "flex",
@@ -270,6 +295,16 @@ ${setupSnippet}`
           </IconButton>
         }
       >
+        {user.email && <PropertyRow label="Email" value={user.email} />}
+        {(user.firstName || user.lastName) && (
+          <PropertyRow label="Name" value={[user.firstName, user.lastName].filter(Boolean).join(" ")} />
+        )}
+        {user.custom && typeof user.custom === "object" && Object.keys(user.custom).length > 0 && (
+          <PropertyRow label="Custom" value={JSON.stringify(user.custom)} />
+        )}
+        {!user.email && !user.firstName && !user.lastName && (!user.custom || typeof user.custom !== "object" || Object.keys(user.custom).length === 0) && (
+          <PropertyRow label="User" value="Unidentified" />
+        )}
         <PropertyRow label="ID" value={session.sessionId?.slice(0, 20) + (session.sessionId?.length > 20 ? "…" : "")} />
         <Typography
           component="button"
@@ -296,19 +331,24 @@ ${setupSnippet}`
         defaultOpen={!isMobile}
         compact={isMobile}
         action={
-          <Tooltip title="Other sessions from the same device or IP in this project">
+          <Tooltip title="Other sessions from the same device, IP, or identified user in this project">
             <RouterIcon sx={{ fontSize: 18, color: "text.secondary" }} />
           </Tooltip>
         }
       >
         <Tabs
-          value={relatedTab}
+          value={hasUserIdentity ? relatedTab : Math.min(relatedTab, 1)}
           onChange={(_, v) => setRelatedTab(v)}
           variant="fullWidth"
           sx={{ minHeight: 36, mb: 1, "& .MuiTab-root": { minHeight: 36, py: 0.5, fontSize: "0.75rem" } }}
         >
           <Tab label={`By Device (${(relatedSessionsByDevice ?? []).filter((s) => s.sessionId !== session.sessionId).length})`} />
           <Tab label={`By IP (${(relatedSessionsByIp ?? []).filter((s) => s.sessionId !== session.sessionId).length})`} />
+          {hasUserIdentity && (
+            <Tab
+              label={`By User${relatedSessionsByUserLoading ? " (…)" : ` (${(relatedSessionsByUser ?? []).filter((s) => s.sessionId !== session.sessionId).length})`}`}
+            />
+          )}
         </Tabs>
           {relatedTab === 0 && (
             <Box>
@@ -389,6 +429,52 @@ ${setupSnippet}`
               )}
             </Box>
           )}
+          {relatedTab === 2 && hasUserIdentity && (
+            <Box>
+              {relatedSessionsByUserLoading ? (
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1, py: 2 }}>
+                  <CircularProgress size={20} />
+                  <Typography variant="caption" color="text.secondary">Loading sessions for this user…</Typography>
+                </Box>
+              ) : (
+                <>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+                    {(relatedSessionsByUser ?? []).filter((s) => s.sessionId !== session.sessionId).length} other session(s) from this user
+                  </Typography>
+                  <List dense disablePadding sx={{ maxHeight: 200, overflow: "auto" }}>
+                    {(relatedSessionsByUser ?? [])
+                      .filter((s) => s.sessionId !== session.sessionId)
+                      .slice(0, 20)
+                      .map((s) => (
+                        <ListItem key={s.sessionId} disablePadding>
+                          <ListItemButton
+                            onClick={() => navigate(`/projects/${session.projectKey}/sessions/${s.sessionId}`)}
+                            sx={{ py: 0.25, borderRadius: 1 }}
+                          >
+                            <ListItemText
+                              primary={s.sessionId?.slice(0, 8) + "…"}
+                              secondary={
+                                s.createdAt
+                                  ? format(new Date(s.createdAt), "MMM d, h:mm a") +
+                                    (s.duration != null ? ` · ${formatDuration(s.duration)}` : "")
+                                  : ""
+                              }
+                              primaryTypographyProps={{ variant: "caption", fontFamily: "monospace" }}
+                              secondaryTypographyProps={{ variant: "caption" }}
+                            />
+                          </ListItemButton>
+                        </ListItem>
+                      ))}
+                  </List>
+                  {(relatedSessionsByUser ?? []).filter((s) => s.sessionId !== session.sessionId).length > 20 && (
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
+                      + more. Use filters on sessions page to see all.
+                    </Typography>
+                  )}
+                </>
+              )}
+            </Box>
+          )}
         </CollapsibleSection>
 
       <CollapsibleSection
@@ -405,7 +491,23 @@ ${setupSnippet}`
             <Typography variant="caption" color="text.secondary">Generating summary…</Typography>
           </Box>
         )}
-        {summaryError && !summaryLoading && (
+        {summaryError && !summaryLoading && summaryUpgradeRequired && (
+          <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 1.5, py: 0.5 }}>
+            <Typography variant="body2" color="text.secondary">
+              {summaryError}. AI summary is available on the Pro plan.
+            </Typography>
+            <Button
+              size="small"
+              variant="contained"
+              startIcon={<AutoAwesomeIcon />}
+              onClick={() => navigate("/account/upgrade")}
+              sx={{ textTransform: "none", fontWeight: 600 }}
+            >
+              Upgrade to Pro
+            </Button>
+          </Box>
+        )}
+        {summaryError && !summaryLoading && !summaryUpgradeRequired && (
           <ErrorDisplay message={summaryError} compact showDetails={false} />
         )}
         {aiSummary && !summaryLoading && (
@@ -415,13 +517,15 @@ ${setupSnippet}`
               if (raw == null) return "—";
               if (typeof raw !== "string") return String(raw);
               const s = raw.trim();
-              if (s.startsWith("{") && s.includes('"narrative"')) {
+              if (s.startsWith("{") && s.includes("narrative")) {
                 try {
                   const parsed = JSON.parse(s);
                   if (parsed && typeof parsed.narrative === "string") return parsed.narrative;
-                } catch (_) { /* ignore */ }
+                } catch (_) { /* truncated or invalid JSON */ }
+                const m = s.match(/"narrative"\s*:\s*"((?:[^"\\]|\\.)*)/);
+                if (m && m[1]) return m[1].replace(/\\n/g, " ").replace(/\\"/g, '"').trim() || "—";
               }
-              return raw;
+              return s;
             })()}</Typography>
             <PropertyRow label="Intent" value={aiSummary.intent || "—"} />
             <PropertyRow label="Emotional score" value={aiSummary.emotionalScore != null ? `${aiSummary.emotionalScore}/10` : "—"} />
@@ -430,7 +534,19 @@ ${setupSnippet}`
           </Box>
         )}
         {!aiSummary && !summaryLoading && !summaryError && (
-          <Typography variant="caption" color="text.secondary">No summary yet. Open the session to generate one.</Typography>
+          <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 1, py: 0.5 }}>
+            <Typography variant="caption" color="text.secondary">Generate an AI summary of this session.</Typography>
+            {onGenerateSummary && (
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<AutoAwesomeIcon />}
+                onClick={onGenerateSummary}
+              >
+                Generate summary
+              </Button>
+            )}
+          </Box>
         )}
       </CollapsibleSection>
 

@@ -29,9 +29,9 @@ export class ChunkStorage {
     );
   }
 
-  async getChunks(sessionId) {
+  async getChunks(sessionId, chunkCount) {
     if (this.type === "gcs") {
-      return this.gcs.downloadChunks(sessionId);
+      return this.gcs.downloadChunks(sessionId, chunkCount);
     }
     const docs = await QuicklookChunk.find({ sessionId })
       .select("index events")

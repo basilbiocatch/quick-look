@@ -38,6 +38,7 @@ router.post("/device-id", validateOrigin, deviceIdController.postDeviceId);
 router.post("/sessions/start", validateOrigin, quicklookController.startSession);
 router.post("/sessions/:sessionId/chunk", validateOrigin, quicklookController.saveChunk);
 router.post("/sessions/:sessionId/end", validateOrigin, quicklookController.endSession);
+router.post("/sessions/:sessionId/identify", validateOrigin, quicklookController.updateSessionIdentify);
 
 router.use(requireAuth, requireEmailVerified);
 

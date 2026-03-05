@@ -9,6 +9,7 @@ export function requirePlan(allowedPlans) {
     const plan = req.user?.plan || "free";
     if (!allowedPlans.includes(plan)) {
       return res.status(403).json({
+        success: false,
         error: "Upgrade required",
         requiredPlan: "pro",
         code: "UPGRADE_REQUIRED",

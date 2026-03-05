@@ -31,7 +31,36 @@ export function initQuicklookWebsite() {
   script.onload = () => {
     try {
       if (window.quicklook) {
-        window.quicklook("init", WEBSITE_PROJECT_KEY, { apiUrl: sdkBase });
+        window.quicklook("init", WEBSITE_PROJECT_KEY, {
+          apiUrl: sdkBase,
+          inlineStylesheet: false,
+          collectFonts: false,
+          slimDOM: true,
+          blockClass: 'ql-block',        // Don't record elements with this class
+          blockSelector: '[data-ql-block]', // Don't record elements matching this
+          ignoreClass: 'ql-ignore',      // Don't record these elements
+          maskTextClass: 'ql-mask',      // Mask text in these elements
+          maskAllInputs: true,           // Mask all input values
+          maskInputOptions: {            // Fine-grained input masking
+            password: true,
+            email: true,
+          },
+          sampling: {
+            mousemove: true,             // Sample mouse movements
+            mouseInteraction: true,      // Sample clicks
+            scroll: 150,                 // Sample scroll every 150ms
+            input: 'last',               // Only record last input value
+          },
+          // Don't record these tags:
+          slimDOMOptions: {
+            script: true,                // Don't record <script> content
+            comment: true,               // Don't record HTML comments
+            headFavicon: true,           // Don't record favicons
+            headWhitespace: true,        // Remove whitespace in <head>
+            headMetaDescKeywords: true,  // Remove meta description/keywords
+            headMetaSocial: true,        // Remove social meta tags (og:, twitter:)
+          },
+        });
       }
     } catch (_) {}
   };

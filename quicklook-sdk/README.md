@@ -49,6 +49,7 @@ window.quicklook("init", "YOUR_PROJECT_KEY", {
 
 - `init(projectKey, options?)` — Start recording; required first.
 - `identify({ firstName?, lastName?, email?, ...custom })` — Set user identity.
+- `getIdentity()` — Return the current identity object (for debugging).
 - `stop()` — Stop recording and flush.
 - `getSessionId(callback?)` — Return or callback with current session ID.
 
@@ -59,6 +60,19 @@ You can read the current session ID as a property (synchronous, may be `null` be
 ```javascript
 const id = window.quicklook.sessionId;
 ```
+
+### Checking if the user is identified (console)
+
+From the browser console you can see whether a user has been identified:
+
+```javascript
+// Current identity (empty object {} if never identified)
+window.quicklook.identity
+// or
+window.quicklook("getIdentity")
+```
+
+If you’ve called `identify({ email: "jane@example.com", ... })`, the returned object will contain those fields. Otherwise it will be `{}`.
 
 ## Local development
 

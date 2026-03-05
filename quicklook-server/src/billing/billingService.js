@@ -29,6 +29,16 @@ export const billingService = {
     return a.createBillingPortalSession(customerId, returnUrl);
   },
 
+  async getCheckoutSession(sessionId) {
+    const a = await getAdapter();
+    return a.getCheckoutSession(sessionId);
+  },
+
+  async getActiveSubscriptionIdForCustomer(customerId) {
+    const a = await getAdapter();
+    return a.getActiveSubscriptionIdForCustomer(customerId);
+  },
+
   async getSubscription(subscriptionId) {
     const a = await getAdapter();
     return a.getSubscription(subscriptionId);

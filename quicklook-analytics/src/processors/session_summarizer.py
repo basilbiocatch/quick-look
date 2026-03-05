@@ -13,6 +13,15 @@ from src.utils.llm_client import generate
 logger = logging.getLogger(__name__)
 
 INTENTS = ("buyer", "researcher", "comparison", "support", "explorer")
+NARRATIVE_MAX_LEN = 1200  # 2-3 sentences; truncate at word boundary
+
+
+def _truncate_at_word(text: str, max_len: int = NARRATIVE_MAX_LEN) -> str:
+    """Truncate to max_len, at last space so we don't cut mid-word."""
+    if not text or len(text) <= max_len:
+        return (text or "").strip()
+    s = text[: max_len + 1].rsplit(" ", 1)
+    return (s[0] if s else text[:max_len]).strip()
 DROP_OFF_REASONS = ("confusion", "price", "technical", "alternative", "unknown", "")
 
 
@@ -52,21 +61,27 @@ def _parse_summary_response(raw: str) -> dict[str, Any] | None:
     if not raw or not isinstance(raw, str):
         return None
     raw = raw.strip()
+    # Strip markdown code fences (```json\n{...}\n``` or ```\n{...}\n```)
+    raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.I)
+    raw = re.sub(r"\s*```$", "", raw)
+    raw = raw.strip()
     # Try JSON block first
     m = re.search(r"\{[\s\S]*\}", raw)
     if m:
         try:
             obj = json.loads(m.group(0))
-            return obj
+            if isinstance(obj, dict) and "narrative" in obj:
+                return obj
         except json.JSONDecodeError:
-            pass
+            logger.warning("_parse_summary_response: JSON parse failed, using regex fallback")
     # Fallback: extract fields with regex (allow newlines in string values)
     out = {}
     for key in ("narrative", "keyMoment", "dropOffReason", "intent"):
         pat = rf'"{key}"\s*:\s*"((?:[^"\\]|\\.)*)"'
         m = re.search(pat, raw, re.I | re.DOTALL)
         if m:
-            out[key] = m.group(1).replace("\\n", " ").replace('\\"', '"').strip()[:500]
+            val = m.group(1).replace("\\n", " ").replace('\\"', '"').strip()
+            out[key] = _truncate_at_word(val) if key in ("narrative", "keyMoment") else val
     em = re.search(r'"emotionalScore"\s*:\s*(\d+)', raw, re.I)
     if em:
         try:
@@ -74,9 +89,10 @@ def _parse_summary_response(raw: str) -> dict[str, Any] | None:
             out["emotionalScore"] = max(1, min(10, v))
         except ValueError:
             out["emotionalScore"] = 5
-    if not out:
-        out = {"narrative": raw[:500] if raw else "No summary", "emotionalScore": 5}
-    out.setdefault("narrative", out.get("narrative", "No summary")[:500])
+    if not out or not out.get("narrative"):
+        logger.warning("_parse_summary_response: no fields extracted, using raw as narrative")
+        out = {"narrative": _truncate_at_word(raw) if raw else "No summary", "emotionalScore": 5}
+    out.setdefault("narrative", _truncate_at_word(out.get("narrative", "No summary")))
     out.setdefault("emotionalScore", 5)
     out.setdefault("intent", "explorer")
     out.setdefault("dropOffReason", "")
@@ -121,7 +137,7 @@ Respond with a JSON object only (no markdown, no extra text):
 }}
 """
 
-    response = await generate(prompt, temperature=0.3, max_tokens=512)
+    response = await generate(prompt, temperature=0.3, max_tokens=2048)
     if not response:
         return {
             "narrative": "Summary unavailable (no model response).",
@@ -134,7 +150,7 @@ Respond with a JSON object only (no markdown, no extra text):
     parsed = _parse_summary_response(response)
     if not parsed:
         return {
-            "narrative": response[:500] if response else "Summary unavailable.",
+            "narrative": _truncate_at_word(response) if response else "Summary unavailable.",
             "emotionalScore": 5,
             "intent": "explorer",
             "dropOffReason": "",
@@ -150,11 +166,11 @@ Respond with a JSON object only (no markdown, no extra text):
         drop_off = "unknown" if drop_off else ""
 
     return {
-        "narrative": (parsed.get("narrative") or "")[:500],
+        "narrative": _truncate_at_word(parsed.get("narrative") or ""),
         "emotionalScore": max(1, min(10, int(parsed.get("emotionalScore") or 5))),
         "intent": intent,
         "dropOffReason": drop_off,
-        "keyMoment": (parsed.get("keyMoment") or "")[:500],
+        "keyMoment": _truncate_at_word(parsed.get("keyMoment") or ""),
     }
 
 

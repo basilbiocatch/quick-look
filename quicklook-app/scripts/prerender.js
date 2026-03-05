@@ -12,6 +12,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.resolve(__dirname, "..", "dist");
 const BASE_URL = "https://quicklook.io";
 
+function findCssFile() {
+  const assetsDir = path.join(DIST, "assets");
+  if (!fs.existsSync(assetsDir)) return null;
+  const files = fs.readdirSync(assetsDir);
+  const cssFile = files.find((f) => f.endsWith(".css"));
+  return cssFile ? `/assets/${cssFile}` : null;
+}
+
 const MIME = {
   ".html": "text/html",
   ".js": "application/javascript",
@@ -46,11 +54,12 @@ function serveDist(port) {
   });
 }
 
-function getSEOHead() {
+function getSEOHead(cssPath) {
   const title = "Quicklook – Session Replay & DevTools for Developers | Debug Faster";
   const description =
     "Session replay and DevTools built for developers. Record user sessions, debug with integrated DevTools, and ship faster. Free tier with 1,000 sessions.";
   const ogImage = `${BASE_URL}/og-image.png`;
+  const cssLink = cssPath ? `\n    <link rel="stylesheet" href="${cssPath}" />` : "";
 
   return `  <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -60,7 +69,7 @@ function getSEOHead() {
     <meta name="keywords" content="session replay, session replay tool, devtools, debugging tools, frontend monitoring, user session recording, developer tools" />
     <link rel="canonical" href="${BASE_URL}/" />
     <link rel="icon" type="image/png" href="/favicon.png" />
-    <link rel="apple-touch-icon" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/favicon.png" />${cssLink}
     <meta name="theme-color" content="#be95fa" />
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
@@ -190,8 +199,8 @@ function escapeHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
-function injectSEO(html) {
-  const headContent = getSEOHead();
+function injectSEO(html, cssPath) {
+  const headContent = getSEOHead(cssPath);
   const structuredData = getStructuredData();
   const scriptTags = structuredData
     .map(
@@ -200,8 +209,18 @@ function injectSEO(html) {
     )
     .join("\n");
 
-  const newHead = `<head>\n${headContent}\n${scriptTags}\n  </head>`;
-  const replaced = html.replace(/<head>[\s\S]*?<\/head>/i, newHead);
+  // Inline style hides body until JS adds "ready" class (prevents FOUC from Emotion/MUI
+  // styles injecting after first paint). The body must NOT start with class="ready" for
+  // this to work — we strip it below.
+  const foucGuard = `  <style>body:not(.ready){visibility:hidden}</style>`;
+
+  const newHead = `<head>\n${headContent}\n${scriptTags}\n${foucGuard}\n  </head>`;
+  let replaced = html.replace(/<head>[\s\S]*?<\/head>/i, newHead);
+
+  // Strip the "ready" class Puppeteer captured — it must be absent on initial load
+  // so the FOUC guard above hides the body until main.jsx adds it after styles inject.
+  replaced = replaced.replace(/<body\s+class="ready"/i, "<body");
+
   return replaced;
 }
 
@@ -242,7 +261,8 @@ async function main() {
     const html = await page.content();
     await browser.close();
 
-    let optimized = injectSEO(html);
+    const cssPath = findCssFile();
+    let optimized = injectSEO(html, cssPath);
     if (bodyScripts.length && !/<script[^>]*src\s*=/.test(optimized)) {
       const scriptsHtml = bodyScripts.join("\n    ");
       optimized = optimized.replace("</body>", `\n    ${scriptsHtml}\n  </body>`);

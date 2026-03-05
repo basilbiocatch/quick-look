@@ -1,15 +1,20 @@
 let inactivityTimer = null;
+let maxInactivityTimer = null;
 let isPaused = false;
+let pausedByVisibility = false; // true when paused due to tab hidden (no max-inactivity end)
 let inactivityTimeout = 5 * 60 * 1000; // Default 5 minutes
+const MAX_INACTIVITY_BEFORE_END_MS = 30 * 60 * 1000; // 30 minutes total inactivity → end session
 let pauseOnHidden = true;
 let activityListenersAttached = false;
 
 let pauseCallback = null;
 let resumeCallback = null;
+let maxInactivityCallback = null;
 
-export function setActivityCallbacks(onPause, onResume) {
+export function setActivityCallbacks(onPause, onResume, onMaxInactivityReached) {
   pauseCallback = onPause;
   resumeCallback = onResume;
+  maxInactivityCallback = typeof onMaxInactivityReached === "function" ? onMaxInactivityReached : null;
 }
 
 export function setActivityConfig(config) {
@@ -25,14 +30,34 @@ export function isPausedByActivity() {
   return isPaused;
 }
 
-function pauseRecording() {
+function clearMaxInactivityTimer() {
+  if (maxInactivityTimer) {
+    clearTimeout(maxInactivityTimer);
+    maxInactivityTimer = null;
+  }
+}
+
+function pauseRecording(byVisibility = false) {
   if (isPaused) return;
   isPaused = true;
+  pausedByVisibility = byVisibility;
   if (pauseCallback) pauseCallback();
+  // When paused due to inactivity (not tab hidden), start max-inactivity timer.
+  // After 30 min total inactivity we end the session.
+  if (!byVisibility && inactivityTimeout > 0 && MAX_INACTIVITY_BEFORE_END_MS > inactivityTimeout) {
+    clearMaxInactivityTimer();
+    const remainingMs = MAX_INACTIVITY_BEFORE_END_MS - inactivityTimeout;
+    maxInactivityTimer = setTimeout(() => {
+      maxInactivityTimer = null;
+      if (maxInactivityCallback) maxInactivityCallback();
+    }, remainingMs);
+  }
 }
 
 function resumeRecording() {
   if (!isPaused) return;
+  clearMaxInactivityTimer();
+  pausedByVisibility = false;
   isPaused = false;
   if (resumeCallback) resumeCallback();
 }
@@ -42,7 +67,7 @@ function resetInactivityTimer() {
   if (isPaused || inactivityTimeout <= 0) return;
   
   inactivityTimer = setTimeout(() => {
-    pauseRecording();
+    pauseRecording(false); // inactivity, not visibility
   }, inactivityTimeout);
 }
 
@@ -50,7 +75,7 @@ function handleVisibilityChange() {
   if (!pauseOnHidden) return;
   
   if (typeof document !== "undefined" && document.hidden) {
-    pauseRecording();
+    pauseRecording(true); // visibility
   } else {
     if (isPaused) {
       resumeRecording();
@@ -96,6 +121,7 @@ export function stopActivityMonitoring() {
     clearTimeout(inactivityTimer);
     inactivityTimer = null;
   }
+  clearMaxInactivityTimer();
   
   document.removeEventListener("visibilitychange", handleVisibilityChange);
   

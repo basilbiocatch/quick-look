@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+                                                                                                                                                                                                                                                                                                                                                                                                                                                              import React, { useState } from "react";
 import {
   Box,
   IconButton,
@@ -23,9 +23,9 @@ import AddIcon from "@mui/icons-material/Add";
 import CheckIcon from "@mui/icons-material/Check";
 import HomeIcon from "@mui/icons-material/Home";
 import PersonIcon from "@mui/icons-material/Person";
-import { getProjects } from "../api/quicklookApi";
 import { getPublicAssetUrl } from "../utils/baseUrl";
 import { useAuth } from "../contexts/AuthContext";
+import { useProjects } from "../contexts/ProjectsContext";
 import { usePlanFeatures } from "../hooks/usePlanFeatures";
 
 export const NAV_WIDTH = 64;
@@ -49,29 +49,12 @@ export default function MainNavBar() {
   const { user, logout } = useAuth();
   const { projectKey: routeProjectKey } = useParams();
   const projectKey = routeProjectKey || null;
-  const [projects, setProjects] = useState([]);
-  const [projectsLoading, setProjectsLoading] = useState(true);
+  const { projects, loading: projectsLoading } = useProjects();
   const [projectMenuAnchor, setProjectMenuAnchor] = useState(null);
   const [accountMenuAnchor, setAccountMenuAnchor] = useState(null);
   const { canCreateProject, canAccessAI } = usePlanFeatures(projects.length);
   const isPro = user?.plan === "pro";
   const navProSuffix = isPro ? "" : " (Pro)";
-
-  useEffect(() => {
-    let cancelled = false;
-    setProjectsLoading(true);
-    getProjects()
-      .then((res) => {
-        if (!cancelled && res.data?.data) setProjects(res.data.data);
-      })
-      .catch(() => {
-        if (!cancelled) setProjects([]);
-      })
-      .finally(() => {
-        if (!cancelled) setProjectsLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, []);
 
   const onSelectProject = (key) => {
     setProjectMenuAnchor(null);

@@ -11,7 +11,7 @@ import {
   Alert,
 } from "@mui/material";
 import { useAuth } from "../contexts/AuthContext";
-import { getSubscriptionStatus, createBillingPortal, cancelSubscription } from "../api/subscriptionApi";
+import { getSubscriptionStatus, createBillingPortal, cancelSubscription, syncSubscription } from "../api/subscriptionApi";
 
 export default function SubscriptionPage() {
   const { user, loadUser } = useAuth();
@@ -20,6 +20,8 @@ export default function SubscriptionPage() {
   const [loading, setLoading] = useState(true);
   const [portalLoading, setPortalLoading] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncError, setSyncError] = useState("");
 
   const handleCancel = async () => {
     if (!window.confirm("Cancel at period end? You'll keep Pro until the current period ends.")) return;
@@ -41,6 +43,21 @@ export default function SubscriptionPage() {
       .catch(() => setStatus(null))
       .finally(() => setLoading(false));
   }, []);
+
+  const handleSyncSubscription = async () => {
+    setSyncError("");
+    setSyncLoading(true);
+    try {
+      await syncSubscription();
+      await loadUser();
+      const res = await getSubscriptionStatus();
+      setStatus(res.data);
+    } catch (err) {
+      setSyncError(err.response?.data?.error || err.message || "Sync failed");
+    } finally {
+      setSyncLoading(false);
+    }
+  };
 
   const handleManage = async () => {
     setPortalLoading(true);
@@ -120,6 +137,19 @@ export default function SubscriptionPage() {
           <Button variant="contained" fullWidth onClick={() => navigate("/account/upgrade")}>
             Upgrade to Pro
           </Button>
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Already paid? Refresh to update your plan.
+            </Typography>
+            <Button variant="outlined" fullWidth onClick={handleSyncSubscription} disabled={syncLoading}>
+              {syncLoading ? <CircularProgress size={20} /> : "Refresh subscription status"}
+            </Button>
+            {syncError && (
+              <Alert severity="error" sx={{ mt: 1 }} onClose={() => setSyncError("")}>
+                {syncError}
+              </Alert>
+            )}
+          </Box>
         </>
       )}
     </Box>

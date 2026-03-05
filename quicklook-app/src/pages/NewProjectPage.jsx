@@ -98,12 +98,8 @@ export default function NewProjectPage() {
   const snippet = createdProject
     ? `<script src="${apiBase}/quicklook-sdk.js" async></script>
 <script>
-  quicklook('init', {
-    apiUrl: '${apiBase}',
-    projectKey: '${createdProject.projectKey}'
-  });
-  // Optional: identify user
-  // quicklook('setIdentity', { email: 'user@example.com', firstName: 'Jane' });
+  quicklook('init', '${createdProject.projectKey}', { apiUrl: '${apiBase}' });
+  // Optional: quicklook('identify', { email: 'user@example.com', firstName: 'Jane' });
 </script>`
     : "";
 

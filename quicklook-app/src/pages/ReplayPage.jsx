@@ -29,7 +29,7 @@ import SkipNextIcon from "@mui/icons-material/SkipNext";
 import CloseIcon from "@mui/icons-material/Close";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { getSession, getEventsBatch, getSessions, getProject, updateProject, getEnsureSummary } from "../api/quicklookApi";
+import { getSession, getEvents, getSessions, getProject, updateProject, getEnsureSummary } from "../api/quicklookApi";
 import { getEventsDurationMs, getPagesFromEvents, getEventMarksFromEvents, getEventMarksWithTypes, urlPageKey } from "../utils/activityList";
 import RightPanel from "../components/RightPanel";
 import PlayerControls from "../components/PlayerControls";
@@ -72,13 +72,10 @@ export default function ReplayPage() {
   const [aiSummary, setAiSummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState("");
+  const [summaryUpgradeRequired, setSummaryUpgradeRequired] = useState(false);
   const [relatedSessionsByIp, setRelatedSessionsByIp] = useState([]);
   const [relatedSessionsByDevice, setRelatedSessionsByDevice] = useState([]);
   const [eventsRetryKey, setEventsRetryKey] = useState(0);
-  const [chunksLoaded, setChunksLoaded] = useState(0);
-  const [totalChunks, setTotalChunks] = useState(0);
-  const [allChunksLoaded, setAllChunksLoaded] = useState(false);
-  const backgroundLoadingRef = useRef(false);
   const countdownRef = useRef(null);
   const countdownIntervalRef = useRef(null);
   const skipMessageTimeoutRef = useRef(null);
@@ -86,7 +83,6 @@ export default function ReplayPage() {
   useEffect(() => {
     if (!sessionId) return;
     let cancelled = false;
-    // Reset overlay and AI summary state when session changes
     setShowEndOverlay(false);
     setCountdown(5);
     setCurrentTime(0);
@@ -94,11 +90,10 @@ export default function ReplayPage() {
     setExcludedUrls([]);
     setAiSummary(null);
     setSummaryError("");
+    setSummaryUpgradeRequired(false);
     setSummaryLoading(false);
     setRelatedSessionsByIp([]);
     setRelatedSessionsByDevice([]);
-    setAllChunksLoaded(false);
-    backgroundLoadingRef.current = false;
     (async () => {
       setLoading(true);
       setError("");
@@ -114,152 +109,64 @@ export default function ReplayPage() {
           return;
         }
 
-        // Show page layout immediately; load first batch of events, then continue in background
         if (!cancelled) setLoading(false);
         if (!cancelled) setEventsLoading(true);
 
         const projectKey = sessionData.projectKey;
-        const BATCH_SIZE = 3; // Load 3 chunks at a time for faster initial render
 
         try {
-          // Load sessions list in parallel with events (don't block on it)
-          const sessionsPromise = projectKey
-            ? getSessions({ projectKey, limit: 200, skip: 0 })
-            : Promise.resolve({ data: { data: [] } });
+          // Load sessions list and events in parallel
+          const [eventsRes, sessionsRes] = await Promise.all([
+            getEvents(sessionId),
+            projectKey
+              ? getSessions({ projectKey, limit: 200, skip: 0 })
+              : Promise.resolve({ data: { data: [] } }),
+          ]);
+          if (cancelled) return;
 
-          // Progressive chunk loading – load first batch to mount player immediately
-          let allEvents = [];
-          let accumulatedMeta = { pages: [], networkEvents: 0, consoleEvents: 0 };
-          let start = 0;
-          let hasMore = true;
-          let firstBatchLoaded = false;
+          const data = eventsRes.data;
+          const allEvents = data?.events || [];
+          const eventMeta = data?.meta || {};
 
-          while (hasMore && !cancelled) {
-            const batchRes = await getEventsBatch(sessionId, start, BATCH_SIZE);
-            if (cancelled) break;
+          setEvents(allEvents);
+          setMeta(eventMeta);
+          setEventsLoading(false);
 
-            const data = batchRes.data;
-            const batchEvents = data?.events || [];
-            const batchMeta = data?.meta || {};
+          const firstMeta = allEvents.find((e) => e.type === 4);
+          if (firstMeta?.data?.href) setCurrentUrl(firstMeta.data.href);
 
-            allEvents = [...allEvents, ...batchEvents];
-            if (batchMeta.pages?.length) {
-              accumulatedMeta.pages = [...new Set([...accumulatedMeta.pages, ...batchMeta.pages])];
-            }
-            accumulatedMeta.networkEvents += batchMeta.networkEvents || 0;
-            accumulatedMeta.consoleEvents += batchMeta.consoleEvents || 0;
-
-            if (!cancelled) {
-              setEvents(allEvents);
-              setMeta({
-                chunkCount: batchMeta.totalChunks,
-                eventCount: allEvents.length,
-                pages: accumulatedMeta.pages,
-                networkEvents: accumulatedMeta.networkEvents,
-                consoleEvents: accumulatedMeta.consoleEvents,
-              });
-              setChunksLoaded(start + (batchMeta.returnedChunks || 0));
-              setTotalChunks(batchMeta.totalChunks || 1);
-              
-              // After first batch, hide loader so player can mount and start
-              if (!firstBatchLoaded && allEvents.length > 0) {
-                firstBatchLoaded = true;
-                setEventsLoading(false);
-                const firstMeta = allEvents.find((e) => e.type === 4);
-                if (firstMeta?.data?.href) setCurrentUrl(firstMeta.data.href);
-              }
-            }
-
-            hasMore = batchMeta.hasMore === true;
-            start += batchMeta.returnedChunks ?? 0;
-
-            if (batchMeta.returnedChunks === 0 || !hasMore) {
-              if (!cancelled) setAllChunksLoaded(true);
-              break;
-            }
-          }
-
-          if (!cancelled && !firstBatchLoaded) {
-            setEventsError(null);
-            const firstMeta = allEvents.find((e) => e.type === 4);
-            if (firstMeta?.data?.href) setCurrentUrl(firstMeta.data.href);
-          }
-
-          // Sessions list (from parallel or already resolved)
-          const sessionsRes = await sessionsPromise;
-          if (!cancelled && projectKey && sessionsRes?.data?.data) {
+          if (projectKey && sessionsRes?.data?.data) {
             const sessions = sessionsRes.data.data;
             setSessionsList(sessions);
             const index = sessions.findIndex((s) => s.sessionId === sessionId);
             setCurrentSessionIndex(index);
           }
 
-          // Related sessions (same IP, same project)
-          if (projectKey && sessionData?.ipAddress && !cancelled) {
-            try {
-              const relatedRes = await getSessions({
-                projectKey,
-                ipAddress: sessionData.ipAddress,
-                limit: 50,
-              });
-              if (!cancelled) setRelatedSessionsByIp(relatedRes.data?.data ?? []);
-            } catch {
-              if (!cancelled) setRelatedSessionsByIp([]);
-            }
-          } else if (!cancelled) {
-            setRelatedSessionsByIp([]);
-          }
-
-          // Related sessions (same device, same project)
-          if (projectKey && sessionData?.deviceId && !cancelled) {
-            try {
-              const deviceRes = await getSessions({
-                projectKey,
-                deviceId: sessionData.deviceId,
-                limit: 50,
-              });
-              if (!cancelled) setRelatedSessionsByDevice(deviceRes.data?.data ?? []);
-            } catch {
-              if (!cancelled) setRelatedSessionsByDevice([]);
-            }
-          } else if (!cancelled) {
-            setRelatedSessionsByDevice([]);
+          // Related sessions (same IP / same device) in parallel
+          const [ipRes, deviceRes] = await Promise.all([
+            projectKey && sessionData?.ipAddress
+              ? getSessions({ projectKey, ipAddress: sessionData.ipAddress, limit: 50 }).catch(() => null)
+              : null,
+            projectKey && sessionData?.deviceId
+              ? getSessions({ projectKey, deviceId: sessionData.deviceId, limit: 50 }).catch(() => null)
+              : null,
+          ]);
+          if (!cancelled) {
+            setRelatedSessionsByIp(ipRes?.data?.data ?? []);
+            setRelatedSessionsByDevice(deviceRes?.data?.data ?? []);
           }
         } catch (eventsErr) {
           if (!cancelled) {
             setEventsError(eventsErr.response?.data?.error || eventsErr.message || "Failed to load replay");
             setEvents([]);
-          }
-        } finally {
-          if (!cancelled) {
             setEventsLoading(false);
-            setChunksLoaded(0);
-            setTotalChunks(0);
           }
         }
 
-        // On-demand AI summary (analytics): ensure-summary in background so it doesn't block the replay
+        // AI summary: only use if already present; user can generate on demand
         setAiSummary(sessionData?.aiSummary ?? null);
         setSummaryError("");
-        if (sessionData?.aiSummary) {
-          setSummaryLoading(false);
-        } else {
-          setSummaryLoading(true);
-          getEnsureSummary(sessionId)
-            .then((sumRes) => {
-              if (cancelled) return;
-              const data = sumRes.data;
-              setAiSummary(data?.aiSummary ?? null);
-              setSummaryError("");
-            })
-            .catch((sumErr) => {
-              if (!cancelled) setSummaryError(sumErr.response?.data?.error || sumErr.message || "Summary unavailable");
-              if (!cancelled) setAiSummary(null);
-            })
-            .finally(() => {
-              if (!cancelled) setSummaryLoading(false);
-            });
-        }
+        setSummaryLoading(false);
       } catch (err) {
         if (!cancelled) setError(err.response?.data?.error || err.message || "Failed to load");
       } finally {
@@ -268,6 +175,27 @@ export default function ReplayPage() {
     })();
     return () => { cancelled = true; };
   }, [sessionId, eventsRetryKey]);
+
+  const handleGenerateSummary = () => {
+    if (!sessionId || summaryLoading) return;
+    setSummaryError("");
+    setSummaryUpgradeRequired(false);
+    setSummaryLoading(true);
+    getEnsureSummary(sessionId)
+      .then((sumRes) => {
+        setAiSummary(sumRes.data?.aiSummary ?? null);
+        setSummaryError("");
+        setSummaryUpgradeRequired(false);
+      })
+      .catch((sumErr) => {
+        const data = sumErr.response?.data;
+        const isUpgradeRequired = data?.code === "UPGRADE_REQUIRED";
+        setSummaryUpgradeRequired(!!isUpgradeRequired);
+        setSummaryError(isUpgradeRequired ? (data?.error || "Upgrade required") : (data?.error || sumErr.message || "Summary unavailable"));
+        setAiSummary(null);
+      })
+      .finally(() => setSummaryLoading(false));
+  };
 
   const goToPreviousSession = () => {
     if (currentSessionIndex > 0 && sessionsList[currentSessionIndex - 1]) {
@@ -366,51 +294,6 @@ export default function ReplayPage() {
       setShowEndOverlay(false);
     }
     
-    // Check if we need to load more chunks for this seek position
-    if (!allChunksLoaded && events.length > 0) {
-      const lastEventTime = events[events.length - 1]?.timestamp || 0;
-      const firstEventTime = events[0]?.timestamp || 0;
-      const seekTime = firstEventTime + timeMs;
-      
-      // If seeking beyond loaded events, fetch remaining chunks
-      if (seekTime > lastEventTime && chunksLoaded < totalChunks) {
-        const wasPlaying = playing;
-        if (wasPlaying) setPlaying(false);
-        
-        try {
-          // Fetch remaining chunks quickly
-          const BATCH_SIZE = 10; // Larger batch for on-demand loading
-          let start = chunksLoaded;
-          let hasMore = true;
-          
-          while (hasMore && start < totalChunks) {
-            const batchRes = await getEventsBatch(sessionId, start, BATCH_SIZE);
-            const data = batchRes.data;
-            const batchEvents = data?.events || [];
-            const batchMeta = data?.meta || {};
-            
-            const newEvents = [...events, ...batchEvents];
-            setEvents(newEvents);
-            setChunksLoaded(start + (batchMeta.returnedChunks || 0));
-            
-            hasMore = batchMeta.hasMore === true;
-            start += batchMeta.returnedChunks ?? 0;
-            
-            // Check if we've loaded enough for the seek position
-            const newLastEventTime = newEvents[newEvents.length - 1]?.timestamp || 0;
-            if (seekTime <= newLastEventTime || !hasMore) {
-              if (!hasMore) setAllChunksLoaded(true);
-              break;
-            }
-          }
-        } catch (err) {
-          console.error("Failed to load chunks for seek:", err);
-        }
-        
-        if (wasPlaying) setPlaying(true);
-      }
-    }
-    
     try {
       const wrapper = playerRef?.current;
       if (wrapper?.goto) wrapper.goto(timeMs, false);
@@ -430,7 +313,7 @@ export default function ReplayPage() {
     } catch (_) {}
   };
 
-  // Sync current time from replayer while playing; when skipInactive is on, jump over long gaps (>30s) so activity plays at real 1x
+  // Sync current time from replayer while playing
   const INACTIVITY_THRESHOLD_MS = 30 * 1000;
   const tickStartRef = useRef(null);
   const startPositionRef = useRef(0);
@@ -451,7 +334,6 @@ export default function ReplayPage() {
           const ct = replayer.getCurrentTime();
           if (typeof ct === "number" && !Number.isNaN(ct)) t = ct;
         }
-        // Fallback: advance by elapsed time from play start so progress bar moves when replayer not ready
         if (t == null && tickStartRef.current != null) {
           const elapsed = Date.now() - tickStartRef.current;
           t = Math.min(startPositionRef.current + elapsed, totalDuration);
@@ -474,7 +356,6 @@ export default function ReplayPage() {
           setShowEndOverlay(false);
         }
 
-        // When "Skip inactivity" is on: jump over long gaps so the user sees real-time during activity
         if (t != null && skipInactive && eventMarks.length > 0 && wrapper?.goto) {
           const nextMark = eventMarks.find((m) => m > t + 80);
           if (nextMark != null && nextMark - t > INACTIVITY_THRESHOLD_MS) {
@@ -665,37 +546,6 @@ export default function ReplayPage() {
       }
     };
   }, [playerEvents, session]);
-
-  // Incremental event updates: use addEvent when new events arrive (without remounting player)
-  const prevEventCountRef = useRef(0);
-  useEffect(() => {
-    const wrapper = playerRef?.current;
-    if (!wrapper || !wrapper.addEvent) return;
-    
-    const currentCount = playerEvents.length;
-    const prevCount = prevEventCountRef.current;
-    
-    if (currentCount > prevCount) {
-      // Add new events to existing player
-      const newEvents = playerEvents.slice(prevCount);
-      const metaEvent = playerEvents.find((e) => e.type === 4);
-      const width = metaEvent?.data?.width || meta?.viewport?.width || session?.meta?.viewport?.width || 1024;
-      const height = metaEvent?.data?.height || meta?.viewport?.height || session?.meta?.viewport?.height || 768;
-      
-      for (const event of newEvents) {
-        try {
-          const patchedEvent = event.type === 4 && (!event.data?.width || !event.data?.height)
-            ? { ...event, data: { ...event.data, width, height } }
-            : event;
-          wrapper.addEvent(patchedEvent);
-        } catch (err) {
-          console.warn("Failed to add event to player:", err);
-        }
-      }
-    }
-    
-    prevEventCountRef.current = currentCount;
-  }, [playerEvents, meta, session]);
 
   // Prevent scroll jumping when user manually scrolls to bottom
   useEffect(() => {
@@ -1044,31 +894,7 @@ export default function ReplayPage() {
               }}
             />
             {eventsLoading && (
-              <EventsLoader chunksLoaded={chunksLoaded} totalChunks={totalChunks} />
-            )}
-            {!eventsLoading && !allChunksLoaded && chunksLoaded > 0 && totalChunks > chunksLoaded && (
-              <Box
-                sx={{
-                  position: "absolute",
-                  top: 12,
-                  right: 12,
-                  bgcolor: "rgba(138, 43, 226, 0.9)",
-                  color: "white",
-                  px: 1.5,
-                  py: 0.75,
-                  borderRadius: 1,
-                  fontSize: "0.75rem",
-                  fontWeight: 500,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 1,
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
-                  zIndex: 5,
-                }}
-              >
-                <CircularProgress size={12} sx={{ color: "white" }} />
-                Loading {chunksLoaded}/{totalChunks} chunks
-              </Box>
+              <EventsLoader />
             )}
             {!eventsLoading && eventsError && (
               <ErrorDisplay
@@ -1293,7 +1119,11 @@ export default function ReplayPage() {
         {/* Right panel: side-by-side on desktop, full-width below player on mobile */}
         <Box
           sx={{
-            ...(isMobile && { flex: 1, minHeight: 0, overflow: "auto" }),
+            display: "flex",
+            flexDirection: "column",
+            minHeight: 0,
+            overflow: "hidden",
+            ...(isMobile && { flex: 1 }),
           }}
         >
           <RightPanel
@@ -1309,6 +1139,8 @@ export default function ReplayPage() {
             aiSummary={aiSummary}
             summaryLoading={summaryLoading}
             summaryError={summaryError}
+            summaryUpgradeRequired={summaryUpgradeRequired}
+            onGenerateSummary={handleGenerateSummary}
             relatedSessionsByIp={relatedSessionsByIp}
             relatedSessionsByDevice={relatedSessionsByDevice}
             isMobile={isMobile}

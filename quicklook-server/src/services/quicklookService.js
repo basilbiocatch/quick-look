@@ -60,6 +60,40 @@ export async function checkGcsBucketAtStartup() {
 
 const SESSION_CAP_WINDOW_DAYS = 30;
 
+/** In-memory cache for getSessions stats (total, uniqueUsers, avgDurationMs). TTL 5 min, max 100 entries. */
+const SESSIONS_STATS_CACHE_TTL_MS = 300000;
+const SESSIONS_STATS_CACHE_MAX_SIZE = 100;
+const sessionsStatsCache = new Map();
+
+function getSessionsStatsCacheKey(projectKey, status, from, to) {
+  return `sessions:stats:${String(projectKey ?? "")}:${String(status ?? "")}:${String(from ?? "")}:${String(to ?? "")}`;
+}
+
+function getSessionsStatsFromCache(key) {
+  const entry = sessionsStatsCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > SESSIONS_STATS_CACHE_TTL_MS) {
+    sessionsStatsCache.delete(key);
+    return null;
+  }
+  return entry;
+}
+
+function setSessionsStatsCache(key, total, uniqueUsers, avgDurationMs) {
+  while (sessionsStatsCache.size >= SESSIONS_STATS_CACHE_MAX_SIZE) {
+    let oldestKey = null;
+    let oldestTs = Infinity;
+    for (const [k, v] of sessionsStatsCache) {
+      if (v.timestamp < oldestTs) {
+        oldestTs = v.timestamp;
+        oldestKey = k;
+      }
+    }
+    if (oldestKey != null) sessionsStatsCache.delete(oldestKey);
+  }
+  sessionsStatsCache.set(key, { total, uniqueUsers, avgDurationMs, timestamp: Date.now() });
+}
+
 function decompressChunkData(data, compressed) {
   if (!compressed || !data) return data;
   try {
@@ -197,8 +231,12 @@ export const QuicklookService = {
     });
     const sessionDoc = await QuicklookSession.findOne({ sessionId });
     if (sessionDoc) {
-      // Increment chunk count instead of counting every time (expensive for GCS with many chunks)
-      // Use index+1 as the count if it's higher than current (handles out-of-order chunks)
+      // Reopen if closed (user navigated back within same tab)
+      if (sessionDoc.status === "closed") {
+        sessionDoc.status = "active";
+        sessionDoc.closedAt = null;
+      }
+      
       const indexBasedCount = (index ?? 0) + 1;
       if (indexBasedCount > (sessionDoc.chunkCount || 0)) {
         sessionDoc.chunkCount = indexBasedCount;
@@ -234,7 +272,8 @@ export const QuicklookService = {
     return { success: true };
   },
 
-  async endSession(sessionId, { data, index }) {
+  async endSession(sessionId, body = {}) {
+    const { data, index } = body;
     if (data != null && Array.isArray(data)) {
       await this.saveChunk({ sessionId, index: index ?? 0, data, compressed: false });
     } else if (data != null && index != null) {
@@ -243,25 +282,12 @@ export const QuicklookService = {
     }
     const session = await QuicklookSession.findOne({ sessionId });
     if (!session) return { success: true };
+    // Already closed (duplicate beacon) — skip
+    if (session.status === "closed") return { success: true };
 
-    // Recalculate pages from all chunks before closing
-    const allChunks = await chunkStorage.getChunks(sessionId);
-    const allEvents = allChunks.flatMap((c) => (Array.isArray(c.events) ? c.events : []));
-    const allHrefs = new Set(
-      allEvents.filter((e) => e.type === 4 && e.data?.href).map((e) => String(e.data.href).trim()).filter(Boolean)
-    );
-    if (allHrefs.size > 0) {
-      session.pages = [...allHrefs];
-      session.pageCount = session.pages.length;
-    }
-    
-    // Update chunk count
-    session.chunkCount = allChunks.length;
-    
     session.status = "closed";
     const closedAt = new Date();
     session.closedAt = closedAt;
-    // Calculate duration properly: convert both dates to timestamps
     if (session.createdAt) {
       const createdAt = session.createdAt instanceof Date ? session.createdAt : new Date(session.createdAt);
       session.duration = closedAt.getTime() - createdAt.getTime();
@@ -270,59 +296,93 @@ export const QuicklookService = {
     return { success: true };
   },
 
-  async getSessions({ projectKey, status, from, to, limit = 50, skip = 0, ipAddress, deviceId }) {
+  async updateSessionUser(sessionId, user) {
+    if (!sessionId || !user || typeof user !== "object") return { success: false };
+    const session = await QuicklookSession.findOne({ sessionId }).select("user").lean();
+    if (!session) return { success: false };
+    const merged = { ...(session.user || {}), ...user };
+    await QuicklookSession.updateOne({ sessionId }, { $set: { user: merged } });
+    return { success: true };
+  },
+
+  async getSessions({ projectKey, status, from, to, limit = 50, skip = 0, ipAddress, deviceId, userEmail }) {
     const query = {};
     if (projectKey) query.projectKey = projectKey;
     if (status) query.status = status;
     if (ipAddress && String(ipAddress).trim()) query.ipAddress = String(ipAddress).trim();
     if (deviceId && String(deviceId).trim()) query.deviceId = String(deviceId).trim();
+    if (userEmail && String(userEmail).trim()) query["user.email"] = String(userEmail).trim();
     if (from || to) {
       query.createdAt = {};
       if (from) query.createdAt.$gte = new Date(from);
       if (to) query.createdAt.$lte = new Date(to);
     }
 
-    const now = new Date();
-    const [countResult, statsResult, data] = await Promise.all([
-      QuicklookSession.countDocuments(query),
-      QuicklookSession.aggregate([
-        { $match: query },
-        {
-          $project: {
-            userKey: { $ifNull: ["$user.email", "$sessionId"] },
-            computedDuration: {
-              $cond: [
-                { $eq: ["$status", "closed"] },
-                { $ifNull: ["$duration", 0] },
-                { $subtract: [now, "$createdAt"] },
-              ],
-            },
-          },
-        },
-        {
-          $group: {
-            _id: null,
-            uniqueUsers: { $addToSet: "$userKey" },
-            totalDuration: { $sum: "$computedDuration" },
-            count: { $sum: 1 },
-          },
-        },
-        {
-          $project: {
-            uniqueUsers: { $size: "$uniqueUsers" },
-            avgDurationMs: { $round: [{ $divide: ["$totalDuration", "$count"] }, 0] },
-          },
-        },
-      ]),
-      QuicklookSession.find(query)
+    const useStatsCache =
+      !(ipAddress && String(ipAddress).trim()) &&
+      !(deviceId && String(deviceId).trim()) &&
+      !(userEmail && String(userEmail).trim());
+    const cacheKey = useStatsCache ? getSessionsStatsCacheKey(projectKey, status, from, to) : null;
+    const cached = cacheKey ? getSessionsStatsFromCache(cacheKey) : null;
+
+    let total;
+    let stats;
+    let data;
+
+    if (cached) {
+      total = cached.total;
+      stats = { uniqueUsers: cached.uniqueUsers, avgDurationMs: cached.avgDurationMs };
+      data = await QuicklookSession.find(query)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(Math.min(limit, 200))
-        .lean(),
-    ]);
-
-    const total = countResult;
-    const stats = statsResult[0] || { uniqueUsers: 0, avgDurationMs: 0 };
+        .lean();
+    } else {
+      const now = new Date();
+      const [countResult, statsResult, dataResult] = await Promise.all([
+        QuicklookSession.countDocuments(query),
+        QuicklookSession.aggregate([
+          { $match: query },
+          {
+            $project: {
+              userKey: { $ifNull: ["$user.email", "$sessionId"] },
+              computedDuration: {
+                $cond: [
+                  { $eq: ["$status", "closed"] },
+                  { $ifNull: ["$duration", 0] },
+                  { $subtract: [now, "$createdAt"] },
+                ],
+              },
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              uniqueUsers: { $addToSet: "$userKey" },
+              totalDuration: { $sum: "$computedDuration" },
+              count: { $sum: 1 },
+            },
+          },
+          {
+            $project: {
+              uniqueUsers: { $size: "$uniqueUsers" },
+              avgDurationMs: { $round: [{ $divide: ["$totalDuration", "$count"] }, 0] },
+            },
+          },
+        ]),
+        QuicklookSession.find(query)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(Math.min(limit, 200))
+          .lean(),
+      ]);
+      total = countResult;
+      stats = statsResult[0] || { uniqueUsers: 0, avgDurationMs: 0 };
+      data = dataResult;
+      if (cacheKey != null) {
+        setSessionsStatsCache(cacheKey, total, stats.uniqueUsers, stats.avgDurationMs);
+      }
+    }
     const sessionNow = Date.now();
     for (const session of data) {
       if (session.status === "active" && session.createdAt) {
@@ -371,12 +431,10 @@ export const QuicklookService = {
     const session = await QuicklookSession.findOne({ sessionId }).select("storageType chunkCount").lean();
     let chunks;
     let fromGcs = false;
+    const knownChunkCount = session?.chunkCount || 0;
     if (session?.storageType === "gcs" && CHUNK_STORAGE_BACKEND === "gcs") {
-      chunks = await chunkStorage.getChunks(sessionId);
+      chunks = await chunkStorage.getChunks(sessionId, knownChunkCount);
       fromGcs = chunks.length > 0;
-      // GCS returned nothing — fall back to MongoDB in case chunks were saved there
-      // (e.g. timing window between session start and first upload, or server restart
-      //  mid-session caused some chunks to land in MongoDB before GCS was active)
       if (chunks.length === 0) {
         const mongoChunks = await mongoChunkStorage.getChunks(sessionId);
         if (mongoChunks.length > 0) {
@@ -386,8 +444,8 @@ export const QuicklookService = {
       }
     } else {
       chunks = await mongoChunkStorage.getChunks(sessionId);
-      if (chunks.length === 0 && CHUNK_STORAGE_BACKEND === "gcs" && (session?.chunkCount ?? 0) > 0) {
-        chunks = await chunkStorage.getChunks(sessionId);
+      if (chunks.length === 0 && CHUNK_STORAGE_BACKEND === "gcs" && knownChunkCount > 0) {
+        chunks = await chunkStorage.getChunks(sessionId, knownChunkCount);
         fromGcs = chunks.length > 0;
       }
     }

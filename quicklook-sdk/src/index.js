@@ -5,7 +5,7 @@ import { getSessionId } from "./session.js";
 const api = createQuicklook();
 
 function dispatch(cmd, ...args) {
-  if (api[cmd]) api[cmd](...args);
+  if (api[cmd]) return api[cmd](...args);
 }
 
 function quicklookGlobal() {
@@ -17,7 +17,7 @@ function quicklookGlobal() {
     }
   }
   if (arguments.length) {
-    dispatch(arguments[0], ...Array.prototype.slice.call(arguments, 1));
+    return dispatch(arguments[0], ...Array.prototype.slice.call(arguments, 1));
   }
 }
 
@@ -30,6 +30,13 @@ if (typeof window !== "undefined") {
   Object.defineProperty(window.quicklook, "sessionId", {
     get() {
       return getSessionId();
+    },
+    configurable: true,
+    enumerable: true,
+  });
+  Object.defineProperty(window.quicklook, "identity", {
+    get() {
+      return api.getIdentity();
     },
     configurable: true,
     enumerable: true,

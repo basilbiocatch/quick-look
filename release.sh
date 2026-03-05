@@ -12,9 +12,13 @@ SERVICE_NAME="quicklook-server"
 CONFIG_FILE="$REPO_ROOT/release.config.sh"
 
 usage() {
-  echo "Usage: $0 local | production | all | setup"
+  echo "Usage: $0 local | production | sdk | sdk-deploy | app | app-deploy | all | setup"
   echo "  local      - Build SDK, prepare env, start server and app dev servers"
   echo "  production - Build SDK + app, populate server public/, deploy server to Cloud Run"
+  echo "  sdk        - Build SDK only and copy quicklook-sdk.js + compress.worker.js to server public/"
+  echo "  sdk-deploy - Build SDK, copy to public/, then deploy server to Cloud Run (app in public/ unchanged)"
+  echo "  app        - Build app only and copy to server public/ (no SDK rebuild, no deploy)"
+  echo "  app-deploy - Build app, copy to public/, then deploy server to Cloud Run (no SDK rebuild)"
   echo "  all        - Same as production, then build and deploy analytics worker (server + app + analytics)"
   echo "  setup      - One-time GCP setup (APIs, Artifact Registry)"
   exit 1
@@ -103,6 +107,58 @@ run_production() {
   echo "[release] If first deploy, set env vars: gcloud run services update $SERVICE_NAME --region=$REGION --set-env-vars=QUICKLOOK_DB=...,QUICKLOOK_API_KEY=..."
 }
 
+# ---- SDK only (build + copy to public, no app, no deploy) ----
+run_sdk() {
+  echo "[release] SDK only: building SDK and copying to server public/..."
+  local pub
+  pub="$(ensure_public_dir)"
+  (cd "$REPO_ROOT/quicklook-sdk" && npm ci --no-audit --no-fund && npm run build)
+  cp -f "$REPO_ROOT/quicklook-sdk/dist/quicklook-sdk.js" "$pub/"
+  cp -f "$REPO_ROOT/quicklook-sdk/dist/compress.worker.js" "$pub/"
+  echo "[release] Done. quicklook-sdk.js and compress.worker.js are in quicklook-server/public/"
+}
+
+# ---- SDK + deploy (build SDK, copy to public, deploy server; app in public/ unchanged) ----
+run_sdk_deploy() {
+  echo "[release] SDK + deploy: building SDK, copying to public/, deploying server to Cloud Run..."
+  run_sdk
+  if ! command -v gcloud &>/dev/null; then
+    echo "[release] ERROR: gcloud CLI not found."
+    exit 1
+  fi
+  gcloud config set project "$GCP_PROJECT" --quiet 2>/dev/null || true
+  gcloud builds submit "$REPO_ROOT" --config="$REPO_ROOT/cloudbuild.yaml" --project="$GCP_PROJECT" --substitutions="_REGION=$REGION,_SERVICE_NAME=$SERVICE_NAME"
+  echo "[release] Deploy complete."
+}
+
+# ---- app only (build + copy to public, no SDK, no deploy) ----
+run_app() {
+  echo "[release] App only: building app and copying to server public/..."
+  local pub
+  pub="$(ensure_public_dir)"
+
+  echo "VITE_API_BASE_URL=" > "$REPO_ROOT/quicklook-app/.env"
+  local vite_cache="$REPO_ROOT/quicklook-app/node_modules/.vite"
+  rm -rf "$vite_cache" 2>/dev/null || true
+
+  (cd "$REPO_ROOT/quicklook-app" && npm ci --no-audit --no-fund && npm run build)
+  cp -r "$REPO_ROOT/quicklook-app/dist"/* "$pub/"
+  echo "[release] Done. App is in quicklook-server/public/. To deploy: ./release.sh app-deploy"
+}
+
+# ---- app + deploy (no SDK rebuild) ----
+run_app_deploy() {
+  echo "[release] App + deploy: building app, copying to public/, deploying server..."
+  run_app
+  if ! command -v gcloud &>/dev/null; then
+    echo "[release] ERROR: gcloud CLI not found."
+    exit 1
+  fi
+  gcloud config set project "$GCP_PROJECT" --quiet 2>/dev/null || true
+  gcloud builds submit "$REPO_ROOT" --config="$REPO_ROOT/cloudbuild.yaml" --project="$GCP_PROJECT" --substitutions="_REGION=$REGION,_SERVICE_NAME=$SERVICE_NAME"
+  echo "[release] Deploy complete."
+}
+
 # ---- all (production + analytics) ----
 run_all() {
   echo "[release] Releasing everything: server (+ app + SDK), then analytics worker..."
@@ -139,6 +195,10 @@ run_setup() {
 case "${1:-}" in
   local)       run_local ;;
   production)  run_production ;;
+  sdk)         run_sdk ;;
+  sdk-deploy)  run_sdk_deploy ;;
+  app)         run_app ;;
+  app-deploy)  run_app_deploy ;;
   all)         shift; run_all "$@" ;;
   setup)       run_setup ;;
   *)           usage ;;

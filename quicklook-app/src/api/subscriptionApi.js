@@ -18,6 +18,11 @@ api.interceptors.request.use((config) => {
 
 export const createCheckoutSession = (body) =>
   api.post("/api/subscriptions/create-checkout", body);
+/** Confirm checkout after redirect; syncs user plan from Stripe (handles webhook delay). */
+export const confirmCheckout = (sessionId) =>
+  api.post("/api/subscriptions/confirm-checkout", { sessionId });
+/** Sync plan from Stripe using current user's billing customer (fixes missed webhook). */
+export const syncSubscription = () => api.post("/api/subscriptions/sync");
 export const validateCoupon = (code) =>
   api.post("/api/subscriptions/validate-coupon", { code });
 export const getSubscriptionStatus = () => api.get("/api/subscriptions/status");

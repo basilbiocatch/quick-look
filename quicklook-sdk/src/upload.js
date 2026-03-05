@@ -261,3 +261,22 @@ export function stopScheduler() {
     flushTimer = null;
   }
 }
+
+/** Call after session is ended by max inactivity; clears buffer and chunk index so next activity starts fresh. */
+export function resetAfterSessionEnd() {
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  if (firstChunkTimer) {
+    clearTimeout(firstChunkTimer);
+    firstChunkTimer = null;
+  }
+  eventBuffer = [];
+  chunkIndex = 0;
+  if (typeof sessionStorage !== "undefined") {
+    try {
+      sessionStorage.setItem(STORAGE_CHUNK_KEY, "0");
+    } catch (_) {}
+  }
+}

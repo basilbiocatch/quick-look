@@ -1,15 +1,27 @@
 import React, { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Box, Typography, Button } from "@mui/material";
 import { useAuth } from "../contexts/AuthContext";
+import { confirmCheckout } from "../api/subscriptionApi";
 
 export default function PaymentSuccessPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { loadUser } = useAuth();
 
   useEffect(() => {
-    loadUser();
-  }, [loadUser]);
+    const sessionId = searchParams.get("session_id");
+    (async () => {
+      if (sessionId) {
+        try {
+          await confirmCheckout(sessionId);
+        } catch (_) {
+          // Webhook may have already run; continue to refresh user
+        }
+      }
+      await loadUser();
+    })();
+  }, [searchParams, loadUser]);
 
   return (
     <Box sx={{ maxWidth: 400, mx: "auto", py: 6, px: 2, textAlign: "center" }}>

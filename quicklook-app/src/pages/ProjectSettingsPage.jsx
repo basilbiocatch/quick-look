@@ -7,6 +7,7 @@ import {
   Paper,
   TextField,
   Button,
+  Link,
   List,
   ListItem,
   ListItemText,
@@ -155,10 +156,8 @@ export default function ProjectSettingsPage() {
   const integrationSnippet = project
     ? `<script src="${apiBase}/quicklook-sdk.js" async></script>
 <script>
-  quicklook('init', {
-    apiUrl: '${apiBase}',
-    projectKey: '${projectKey}'
-  });
+  quicklook('init', '${projectKey}', { apiUrl: '${apiBase}' });
+  // Optional: quicklook('identify', { email: 'user@example.com', firstName: 'Jane' });
 </script>`
     : "";
   const integrationPrompt = project
@@ -361,6 +360,14 @@ ${integrationSnippet}`
               <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                 Add this script to your site to start recording sessions.
               </Typography>
+              <Link
+                component="button"
+                variant="body2"
+                onClick={() => navigate("/docs/sdk")}
+                sx={{ display: "inline-block", mb: 2 }}
+              >
+                View full SDK documentation →
+              </Link>
               <ToggleButtonGroup
                 value={integrationMode}
                 exclusive

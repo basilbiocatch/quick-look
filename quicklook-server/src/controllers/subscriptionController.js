@@ -2,6 +2,7 @@
 
 import User from "../models/userModel.js";
 import { billingService } from "../billing/billingService.js";
+import { handleSubscriptionEvents } from "../billing/subscriptionEventHandler.js";
 import {
   getPlanByTier,
   getPlanByPlanId,
@@ -65,6 +66,97 @@ export async function createCheckout(req, res) {
   } catch (err) {
     logger.error("createCheckout", { error: err.message });
     return res.status(500).json({ error: err.message || "Failed to create checkout" });
+  }
+}
+
+/**
+ * Confirm checkout after redirect: sync user plan from Stripe session.
+ * Handles webhook delay or missing webhook (e.g. local dev). Call with session_id from URL.
+ */
+export async function confirmCheckout(req, res) {
+  try {
+    const sessionId = req.body?.sessionId || req.query?.session_id;
+    if (!sessionId) {
+      return res.status(400).json({ error: "session_id is required" });
+    }
+    const userId = req.user?.userId;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const session = await billingService.getCheckoutSession(sessionId);
+    if (!session) {
+      return res.status(400).json({ error: "Invalid or expired checkout session" });
+    }
+    if (session.paymentStatus !== "paid") {
+      return res.status(400).json({ error: "Payment not completed" });
+    }
+    if (session.metadata?.userId !== userId) {
+      return res.status(403).json({ error: "Checkout session does not belong to this user" });
+    }
+    if (!session.subscriptionId) {
+      return res.status(400).json({ error: "No subscription in session" });
+    }
+
+    const sub = await billingService.getSubscription(session.subscriptionId);
+    if (!sub) {
+      return res.status(400).json({ error: "Subscription not found" });
+    }
+    const ev = {
+      type: "subscription.created",
+      subscriptionId: session.subscriptionId,
+      customerId: session.customerId,
+      status: sub.status,
+      priceId: sub.priceId,
+      interval: sub.interval,
+      currentPeriodEnd: sub.currentPeriodEnd,
+      cancelAtPeriodEnd: sub.cancelAtPeriodEnd || false,
+    };
+    await handleSubscriptionEvents([ev]);
+    return res.status(200).json({ plan: "pro", synced: true });
+  } catch (err) {
+    logger.error("confirmCheckout", { error: err.message });
+    return res.status(500).json({ error: err.message || "Failed to confirm checkout" });
+  }
+}
+
+/**
+ * Sync current user's plan from Stripe using their billing.customerId.
+ * Use when user paid but plan wasn't updated (e.g. webhook missed, or before confirm-checkout existed).
+ */
+export async function syncSubscription(req, res) {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    const user = await User.findById(userId);
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    const customerId = user.billing?.customerId;
+    if (!customerId) {
+      return res.status(400).json({ error: "No billing customer. Subscribe first." });
+    }
+
+    const subscriptionId = await billingService.getActiveSubscriptionIdForCustomer(customerId);
+    if (!subscriptionId) {
+      return res.status(404).json({ error: "No active subscription found for this account." });
+    }
+
+    const sub = await billingService.getSubscription(subscriptionId);
+    if (!sub) {
+      return res.status(400).json({ error: "Subscription not found" });
+    }
+    const ev = {
+      type: "subscription.created",
+      subscriptionId,
+      customerId,
+      status: sub.status,
+      priceId: sub.priceId,
+      interval: sub.interval,
+      currentPeriodEnd: sub.currentPeriodEnd,
+      cancelAtPeriodEnd: sub.cancelAtPeriodEnd || false,
+    };
+    await handleSubscriptionEvents([ev]);
+    return res.status(200).json({ plan: "pro", synced: true });
+  } catch (err) {
+    logger.error("syncSubscription", { error: err.message });
+    return res.status(500).json({ error: err.message || "Failed to sync subscription" });
   }
 }
 

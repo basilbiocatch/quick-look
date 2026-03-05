@@ -30,6 +30,7 @@ import {
   useTheme,
 } from "@mui/material";
 import { useNavigate, useParams } from "react-router-dom";
+import { FixedSizeList } from "react-window";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import SearchIcon from "@mui/icons-material/Search";
 import RefreshIcon from "@mui/icons-material/Refresh";
@@ -49,7 +50,9 @@ import BookmarkIcon from "@mui/icons-material/Bookmark";
 import BookmarkAddIcon from "@mui/icons-material/BookmarkAdd";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import FiberManualRecordIcon from "@mui/icons-material/FiberManualRecord";
-import { getSessions } from "../api/quicklookApi";
+import { getSessions, getProject } from "../api/quicklookApi";
+import { generateAndSaveProjectThumbnail } from "../utils/projectThumbnail";
+import { useProjects } from "../contexts/ProjectsContext";
 import {
   formatDuration,
   parseDevice,
@@ -221,6 +224,15 @@ function getFilterChipLabel(f) {
   return `${name} ${opLabel} ${val}`;
 }
 
+function locationDisplay(session) {
+  const loc = session.meta?.location || session.meta?.countryCode;
+  const countryCode = typeof loc === "string" ? loc : loc?.countryCode;
+  const city = typeof loc === "object" && loc?.city ? loc.city : null;
+  const flag = countryCode ? getCountryFlagEmoji(countryCode) : null;
+  if (flag || city) return { flag, text: city || countryCode || "—" };
+  return { flag: null, text: "—" };
+}
+
 const DAYS_OPTIONS = [
   { label: "Last 7 days", value: 7 },
   { label: "Last 14 days", value: 14 },
@@ -253,7 +265,7 @@ const DEFAULT_VISIBLE_COLUMNS = {
 };
 
 const ROW_HEIGHT = 60;
-const COLUMN_WIDTHS = { user: 220, play: 52, date: 160, events: 64, duration: 72, pages: 56, device: 120, location: 110, ip: 120 };
+const COLUMN_WIDTHS = { user: 160, play: 52, date: 160, events: 64, duration: 72, pages: 56, device: 120, location: 110, ip: 120 };
 
 /** Page size for sessions list; server allows up to 200 per request. */
 const SESSIONS_PAGE_SIZE = 100;
@@ -278,12 +290,165 @@ function saveSavedViewsToStorage(projectKey, views) {
   } catch (_) {}
 }
 
+const SessionRow = React.memo(function SessionRow({
+  session,
+  style: rowStyle,
+  visibleColumns,
+  sessionsForUser,
+  isOpened,
+  isTransitioning,
+  onRowClick,
+  status,
+}) {
+  const [localTime, setLocalTime] = useState(() => Date.now());
+  const isLive = session.status === "active";
+
+  useEffect(() => {
+    if (!isLive) return;
+    const interval = setInterval(() => setLocalTime(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [isLive]);
+
+  const device = useMemo(() => parseDevice(session.meta?.userAgent), [session.meta?.userAgent]);
+  const browser = useMemo(() => parseBrowser(session.meta?.userAgent), [session.meta?.userAgent]);
+  const loc = useMemo(() => locationDisplay(session), [session]);
+  const identityLabel = useMemo(() => {
+    const u = session.user;
+    if (!u?.email) return null;
+    return u.email;
+  }, [session.user]);
+
+  const durationDisplay = isLive && session.createdAt
+    ? formatDuration(localTime - new Date(session.createdAt).getTime())
+    : formatDuration(session.duration);
+
+  return (
+    <div style={rowStyle}>
+      <ListItemButton
+        onClick={() => onRowClick(session)}
+        sx={{
+          minHeight: ROW_HEIGHT - 1,
+          height: ROW_HEIGHT - 1,
+          py: 0,
+          px: 2,
+          borderBottom: "1px solid",
+          borderColor: "divider",
+          background: isOpened
+            ? "linear-gradient(90deg, rgba(190,149,250,0.18) 0%, rgba(190,149,250,0.08) 50%, rgba(147,112,219,0.06) 100%)"
+            : (t) => (t.palette.mode === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.02)"),
+          boxShadow: isOpened ? "inset 0 0 0 1px rgba(190,149,250,0.2)" : "none",
+          transition: "background 0.25s ease, box-shadow 0.25s ease, opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
+          opacity: isTransitioning ? 0 : 1,
+          transform: isTransitioning ? "translateX(20px) scale(0.98)" : "translateX(0) scale(1)",
+          "&:hover": {
+            bgcolor: "action.selected",
+            transform: isTransitioning ? "translateX(20px) scale(0.98)" : "translateX(2px) scale(1)",
+          },
+          display: "flex",
+          alignItems: "center",
+        }}
+      >
+        {visibleColumns.user && (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, width: COLUMN_WIDTHS.user, minWidth: COLUMN_WIDTHS.user, maxWidth: COLUMN_WIDTHS.user, flexShrink: 0, mr: COLUMN_GAP, overflow: "hidden" }} onClick={(e) => e.stopPropagation()}>
+            <PersonOutlineIcon sx={{ fontSize: 18, color: "text.secondary", flexShrink: 0 }} />
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flexShrink: 0 }}>
+              <VideocamIcon sx={{ fontSize: 16, color: "text.secondary" }} />
+              <Typography variant="body2" component="span" sx={{ fontSize: "0.875rem", color: "text.secondary" }}>
+                {sessionsForUser}
+              </Typography>
+            </Box>
+            {isLive && status === "" && (
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 0.5,
+                  flexShrink: 0,
+                  "@keyframes pulse": {
+                    "0%": { opacity: 1, transform: "scale(1)" },
+                    "50%": { opacity: 0.5, transform: "scale(1.1)" },
+                    "100%": { opacity: 1, transform: "scale(1)" },
+                  },
+                  animation: "pulse 2s ease-in-out infinite",
+                }}
+              >
+                <FiberManualRecordIcon sx={{ fontSize: 10, color: "#ef4444", filter: "drop-shadow(0 0 4px rgba(239, 68, 68, 0.6))" }} />
+                <Typography variant="caption" sx={{ fontSize: "0.6875rem", fontWeight: 600, color: "#ef4444", letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                  Live
+                </Typography>
+              </Box>
+            )}
+            <Typography variant="body2" noWrap sx={{ fontSize: "0.875rem", minWidth: 0, flex: "1 1 auto", ...(!identityLabel && { color: "text.secondary" }) }} title={identityLabel || session.sessionId}>
+              {identityLabel ?? (session.sessionId ? `${session.sessionId.slice(0, 12)}${session.sessionId.length > 12 ? "…" : ""}` : "")}
+            </Typography>
+          </Box>
+        )}
+        {visibleColumns.play && (
+          <Box sx={{ width: COLUMN_WIDTHS.play, minWidth: COLUMN_WIDTHS.play, flexShrink: 0, mr: COLUMN_GAP }} onClick={(e) => e.stopPropagation()}>
+            <IconButton size="small" color="primary" onClick={(e) => { e.stopPropagation(); onRowClick(session); }} sx={{ p: 0.5 }}>
+              <PlayCircleFilledIcon sx={{ fontSize: 22 }} />
+            </IconButton>
+          </Box>
+        )}
+        {visibleColumns.date && (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: COLUMN_WIDTHS.date, minWidth: COLUMN_WIDTHS.date, flexShrink: 0, mr: COLUMN_GAP }}>
+            <CalendarMonthIcon sx={{ fontSize: 16, color: "text.secondary" }} />
+            <Typography variant="body2" noWrap sx={{ fontSize: "0.875rem" }}>
+              {session.createdAt ? format(new Date(session.createdAt), "MMM d, yy | h:mm a") : "—"}
+            </Typography>
+          </Box>
+        )}
+        {visibleColumns.events && (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: COLUMN_WIDTHS.events, minWidth: COLUMN_WIDTHS.events, flexShrink: 0, mr: COLUMN_GAP }}>
+            <FlagIcon sx={{ fontSize: 16, color: "text.secondary" }} />
+            <Typography variant="body2" sx={{ fontSize: "0.875rem" }}>{session.chunkCount ?? 0}</Typography>
+          </Box>
+        )}
+        {visibleColumns.duration && (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: COLUMN_WIDTHS.duration, minWidth: COLUMN_WIDTHS.duration, flexShrink: 0, mr: COLUMN_GAP }}>
+            <ScheduleIcon sx={{ fontSize: 16, color: "text.secondary" }} />
+            <Typography variant="body2" sx={{ fontSize: "0.875rem" }}>{durationDisplay}</Typography>
+          </Box>
+        )}
+        {visibleColumns.pages && (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: COLUMN_WIDTHS.pages, minWidth: COLUMN_WIDTHS.pages, flexShrink: 0, mr: COLUMN_GAP }}>
+            <TabIcon sx={{ fontSize: 16, color: "text.secondary" }} />
+            <Typography variant="body2" sx={{ fontSize: "0.875rem" }}>{session.pageCount ?? 0}</Typography>
+          </Box>
+        )}
+        {visibleColumns.device && (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: COLUMN_WIDTHS.device, minWidth: COLUMN_WIDTHS.device, flexShrink: 0, mr: COLUMN_GAP }}>
+            <DesktopWindowsIcon sx={{ fontSize: 16, color: "text.secondary" }} />
+            <Typography variant="body2" sx={{ fontSize: "0.875rem" }}>{device}</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.75rem", ml: 0.25 }}>{browser}</Typography>
+          </Box>
+        )}
+        {visibleColumns.location && (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: COLUMN_WIDTHS.location, minWidth: COLUMN_WIDTHS.location, flexShrink: 0, mr: COLUMN_GAP }}>
+            {loc.flag && <Typography component="span" sx={{ fontSize: "1rem", lineHeight: 1 }}>{loc.flag}</Typography>}
+            <Typography variant="body2" noWrap sx={{ fontSize: "0.875rem" }}>{loc.text}</Typography>
+          </Box>
+        )}
+        {visibleColumns.ip && (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: COLUMN_WIDTHS.ip, minWidth: COLUMN_WIDTHS.ip, flexShrink: 0 }}>
+            <Typography variant="body2" noWrap sx={{ fontFamily: "monospace", fontSize: "0.875rem" }} title={session.ipAddress || ""}>
+              {session.ipAddress || "—"}
+            </Typography>
+          </Box>
+        )}
+      </ListItemButton>
+    </div>
+  );
+});
+
 export default function SessionsPage() {
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const { refetch: refetchProjects } = useProjects();
   const { projectKey: routeProjectKey } = useParams();
   const projectKey = routeProjectKey || "";
+  const thumbnailAttemptedRef = React.useRef(false);
   useEffect(() => {
     if (!routeProjectKey) navigate("/", { replace: true });
   }, [routeProjectKey, navigate]);
@@ -320,11 +485,39 @@ export default function SessionsPage() {
   const [saveViewDialogOpen, setSaveViewDialogOpen] = useState(false);
   const [saveViewName, setSaveViewName] = useState("");
   const [transitioningSessionId, setTransitioningSessionId] = useState(null);
-  const [currentTime, setCurrentTime] = useState(Date.now());
+  const [tabVisible, setTabVisible] = useState(() => typeof document !== "undefined" && !document.hidden);
+
+  useEffect(() => {
+    const onVisibilityChange = () => setTabVisible(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, []);
 
   useEffect(() => {
     setSavedViews(getSavedViewsFromStorage(projectKey));
   }, [projectKey]);
+
+  useEffect(() => {
+    thumbnailAttemptedRef.current = false;
+  }, [projectKey]);
+
+  // When sessions are shown and project has no cover image, capture a random session frame and save as project thumbnail
+  useEffect(() => {
+    if (!projectKey.trim() || sessions.length === 0 || loading || thumbnailAttemptedRef.current) return;
+    let cancelled = false;
+    (async () => {
+      thumbnailAttemptedRef.current = true;
+      try {
+        const res = await getProject(projectKey);
+        const project = res.data?.data;
+        if (cancelled || !project || project.thumbnailUrl) return;
+        await generateAndSaveProjectThumbnail(projectKey, { onRefetch: refetchProjects });
+      } catch (_) {
+        thumbnailAttemptedRef.current = false;
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [projectKey, sessions.length, loading, refetchProjects]);
 
   const applySavedView = (view) => {
     setStatus(view.status ?? "closed");
@@ -452,31 +645,21 @@ export default function SessionsPage() {
 
   useEffect(() => {
     load();
-    // Poll for updates when viewing active sessions or "All sessions" (refresh every 3 seconds)
-    // Also poll closed sessions (refresh every 5 seconds)
-    // Use silent refresh (no loading spinner) for polling
-    // When user has loaded more than one page, skip poll so we don't replace the list
+    // Poll only when tab is visible. Active/all: 10s; closed: 30s. Skip when user has loaded more than one page.
     let interval;
-    if (projectKey.trim()) {
-      const pollInterval = status === "active" || status === "" ? 3000 : 5000; // More frequent for active sessions
+    if (projectKey.trim() && tabVisible) {
+      const pollInterval = status === "active" || status === "" ? 10000 : 30000;
       interval = setInterval(() => {
+        if (document.visibilityState !== "visible") return;
         if (sessionsLengthRef.current <= SESSIONS_PAGE_SIZE) {
-          load({ isRefresh: true, silent: true }); // Silent refresh - won't show loading spinner
+          load({ isRefresh: true, silent: true });
         }
       }, pollInterval);
     }
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [load, projectKey, status]);
-
-  // Update current time every second for real-time duration calculation
-  useEffect(() => {
-    const timeInterval = setInterval(() => {
-      setCurrentTime(Date.now());
-    }, 1000);
-    return () => clearInterval(timeInterval);
-  }, []);
+  }, [load, projectKey, status, tabVisible]);
 
   const filteredSessions = useMemo(() => {
     let list = sessions;
@@ -551,14 +734,13 @@ export default function SessionsPage() {
     });
   };
 
-  const locationDisplay = (session) => {
-    const loc = session.meta?.location || session.meta?.countryCode;
-    const countryCode = typeof loc === "string" ? loc : loc?.countryCode;
-    const city = typeof loc === "object" && loc?.city ? loc.city : null;
-    const flag = countryCode ? getCountryFlagEmoji(countryCode) : null;
-    if (flag || city) return { flag, text: city || countryCode || "—" };
-    return { flag: null, text: "—" };
-  };
+  const handleRowClick = useCallback((session) => {
+    setTransitioningSessionId(session.sessionId);
+    markSessionOpened(session.sessionId);
+    setTimeout(() => navigate(`/sessions/${session.sessionId}`), 250);
+  }, [navigate]);
+
+  const LIST_HEIGHT = 600;
 
   return (
     <Box sx={{ display: "flex", flexDirection: isMobile ? "column" : "row", minHeight: "100vh" }}>
@@ -894,198 +1076,30 @@ export default function SessionsPage() {
                         </Box>
                       )}
                     </Box>
-                    <List disablePadding>
-                      {filteredSessions.map((session, idx) => {
-                        const loc = locationDisplay(session);
+                    <FixedSizeList
+                      height={LIST_HEIGHT}
+                      itemCount={filteredSessions.length}
+                      itemSize={ROW_HEIGHT}
+                      width="100%"
+                      style={{ overflowX: "auto" }}
+                    >
+                      {({ index, style }) => {
+                        const session = filteredSessions[index];
                         const userKey = session.user?.email || session.sessionId || "";
-                        const sessionsForUser = sessionCountByUser.get(userKey) ?? 1;
-                        const isLive = session.status === "active";
-                        const isTransitioning = transitioningSessionId === session.sessionId;
                         return (
-                          <ListItemButton
-                            key={session.sessionId}
-                            onClick={() => {
-                              setTransitioningSessionId(session.sessionId);
-                              markSessionOpened(session.sessionId);
-                              // Add a brief delay for the fade-out animation
-                              setTimeout(() => {
-                                navigate(`/sessions/${session.sessionId}`);
-                              }, 250);
-                            }}
-                            sx={{
-                              minHeight: ROW_HEIGHT,
-                              height: ROW_HEIGHT,
-                              py: 0,
-                              px: 2,
-                              borderBottom: idx < filteredSessions.length - 1 ? "1px solid" : "none",
-                              borderColor: "divider",
-                              background: openedSessionIds.has(session.sessionId)
-                                ? "linear-gradient(90deg, rgba(190,149,250,0.18) 0%, rgba(190,149,250,0.08) 50%, rgba(147,112,219,0.06) 100%)"
-                                : (theme) => (theme.palette.mode === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.02)"),
-                              boxShadow: openedSessionIds.has(session.sessionId) ? "inset 0 0 0 1px rgba(190,149,250,0.2)" : "none",
-                              transition: "background 0.25s ease, box-shadow 0.25s ease, opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
-                              opacity: isTransitioning ? 0 : 1,
-                              transform: isTransitioning ? "translateX(20px) scale(0.98)" : "translateX(0) scale(1)",
-                              "&:hover": { 
-                                bgcolor: "action.selected",
-                                transform: isTransitioning ? "translateX(20px) scale(0.98)" : "translateX(2px) scale(1)",
-                              },
-                              display: "flex",
-                              alignItems: "center",
-                            }}
-                          >
-                            {visibleColumns.user && (
-                              <Box sx={{ display: "flex", alignItems: "center", gap: 1, width: COLUMN_WIDTHS.user, minWidth: COLUMN_WIDTHS.user, maxWidth: COLUMN_WIDTHS.user, flexShrink: 0, mr: COLUMN_GAP, overflow: "hidden" }} onClick={(e) => e.stopPropagation()}>
-                                <PersonOutlineIcon sx={{ fontSize: 18, color: "text.secondary", flexShrink: 0 }} />
-                                <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flexShrink: 0 }}>
-                                  <VideocamIcon sx={{ fontSize: 16, color: "text.secondary" }} />
-                                  <Typography variant="body2" component="span" sx={{ fontSize: "0.875rem", color: "text.secondary" }}>
-                                    {sessionsForUser}
-                                  </Typography>
-                                </Box>
-                                {isLive && status === "" && (
-                                  <Box
-                                    sx={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: 0.5,
-                                      flexShrink: 0,
-                                      "@keyframes pulse": {
-                                        "0%": {
-                                          opacity: 1,
-                                          transform: "scale(1)",
-                                        },
-                                        "50%": {
-                                          opacity: 0.5,
-                                          transform: "scale(1.1)",
-                                        },
-                                        "100%": {
-                                          opacity: 1,
-                                          transform: "scale(1)",
-                                        },
-                                      },
-                                      animation: "pulse 2s ease-in-out infinite",
-                                    }}
-                                  >
-                                    <FiberManualRecordIcon
-                                      sx={{
-                                        fontSize: 10,
-                                        color: "#ef4444",
-                                        filter: "drop-shadow(0 0 4px rgba(239, 68, 68, 0.6))",
-                                      }}
-                                    />
-                                    <Typography
-                                      variant="caption"
-                                      sx={{
-                                        fontSize: "0.6875rem",
-                                        fontWeight: 600,
-                                        color: "#ef4444",
-                                        letterSpacing: "0.05em",
-                                        textTransform: "uppercase",
-                                      }}
-                                    >
-                                      Live
-                                    </Typography>
-                                  </Box>
-                                )}
-                                <Typography variant="body2" noWrap sx={{ fontSize: "0.875rem", minWidth: 0, flex: "1 1 auto" }} title={session.sessionId}>
-                                  {String(session.sessionId).slice(0, 16)}{session.sessionId.length > 16 ? "…" : ""}
-                                </Typography>
-                              </Box>
-                            )}
-                            {visibleColumns.play && (
-                              <Box sx={{ width: COLUMN_WIDTHS.play, minWidth: COLUMN_WIDTHS.play, flexShrink: 0, mr: COLUMN_GAP }} onClick={(e) => e.stopPropagation()}>
-                                <IconButton
-                                  size="small"
-                                  color="primary"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setTransitioningSessionId(session.sessionId);
-                                    markSessionOpened(session.sessionId);
-                                    setTimeout(() => {
-                                      navigate(`/sessions/${session.sessionId}`);
-                                    }, 200);
-                                  }}
-                                  sx={{ p: 0.5 }}
-                                >
-                                  <PlayCircleFilledIcon sx={{ fontSize: 22 }} />
-                                </IconButton>
-                              </Box>
-                            )}
-                            {visibleColumns.date && (
-                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: COLUMN_WIDTHS.date, minWidth: COLUMN_WIDTHS.date, flexShrink: 0, mr: COLUMN_GAP }}>
-                                <CalendarMonthIcon sx={{ fontSize: 16, color: "text.secondary" }} />
-                                <Typography variant="body2" noWrap sx={{ fontSize: "0.875rem" }}>
-                                  {session.createdAt ? format(new Date(session.createdAt), "MMM d, yy | h:mm a") : "—"}
-                                </Typography>
-                              </Box>
-                            )}
-                            {visibleColumns.events && (
-                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: COLUMN_WIDTHS.events, minWidth: COLUMN_WIDTHS.events, flexShrink: 0, mr: COLUMN_GAP }}>
-                                <FlagIcon sx={{ fontSize: 16, color: "text.secondary" }} />
-                                <Typography variant="body2" sx={{ fontSize: "0.875rem" }}>
-                                  {session.chunkCount ?? 0}
-                                </Typography>
-                              </Box>
-                            )}
-                            {visibleColumns.duration && (
-                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: COLUMN_WIDTHS.duration, minWidth: COLUMN_WIDTHS.duration, flexShrink: 0, mr: COLUMN_GAP }}>
-                                <ScheduleIcon sx={{ fontSize: 16, color: "text.secondary" }} />
-                                <Typography variant="body2" sx={{ fontSize: "0.875rem" }}>
-                                  {(() => {
-                                    // Calculate duration dynamically for active sessions
-                                    if (session.status === "active" && session.createdAt) {
-                                      const createdAt = new Date(session.createdAt).getTime();
-                                      const liveDuration = currentTime - createdAt;
-                                      return formatDuration(liveDuration);
-                                    }
-                                    return formatDuration(session.duration);
-                                  })()}
-                                </Typography>
-                              </Box>
-                            )}
-                            {visibleColumns.pages && (
-                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: COLUMN_WIDTHS.pages, minWidth: COLUMN_WIDTHS.pages, flexShrink: 0, mr: COLUMN_GAP }}>
-                                <TabIcon sx={{ fontSize: 16, color: "text.secondary" }} />
-                                <Typography variant="body2" sx={{ fontSize: "0.875rem" }}>
-                                  {session.pageCount ?? 0}
-                                </Typography>
-                              </Box>
-                            )}
-                            {visibleColumns.device && (
-                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: COLUMN_WIDTHS.device, minWidth: COLUMN_WIDTHS.device, flexShrink: 0, mr: COLUMN_GAP }}>
-                                <DesktopWindowsIcon sx={{ fontSize: 16, color: "text.secondary" }} />
-                                <Typography variant="body2" sx={{ fontSize: "0.875rem" }}>
-                                  {parseDevice(session.meta?.userAgent)}
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.75rem", ml: 0.25 }}>
-                                  {parseBrowser(session.meta?.userAgent)}
-                                </Typography>
-                              </Box>
-                            )}
-                            {visibleColumns.location && (
-                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: COLUMN_WIDTHS.location, minWidth: COLUMN_WIDTHS.location, flexShrink: 0, mr: COLUMN_GAP }}>
-                                {loc.flag && (
-                                  <Typography component="span" sx={{ fontSize: "1rem", lineHeight: 1 }}>
-                                    {loc.flag}
-                                  </Typography>
-                                )}
-                                <Typography variant="body2" noWrap sx={{ fontSize: "0.875rem" }}>
-                                  {loc.text}
-                                </Typography>
-                              </Box>
-                            )}
-                            {visibleColumns.ip && (
-                              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: COLUMN_WIDTHS.ip, minWidth: COLUMN_WIDTHS.ip, flexShrink: 0 }}>
-                                <Typography variant="body2" noWrap sx={{ fontFamily: "monospace", fontSize: "0.875rem" }} title={session.ipAddress || ""}>
-                                  {session.ipAddress || "—"}
-                                </Typography>
-                              </Box>
-                            )}
-                          </ListItemButton>
+                          <SessionRow
+                            session={session}
+                            style={style}
+                            visibleColumns={visibleColumns}
+                            sessionsForUser={sessionCountByUser.get(userKey) ?? 1}
+                            isOpened={openedSessionIds.has(session.sessionId)}
+                            isTransitioning={transitioningSessionId === session.sessionId}
+                            onRowClick={handleRowClick}
+                            status={status}
+                          />
                         );
-                      })}
-                    </List>
+                      }}
+                    </FixedSizeList>
                   </>
                 )}
                 {!loading && filteredSessions.length === 0 && (

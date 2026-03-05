@@ -3,20 +3,42 @@ import { pushEvent } from "./upload.js";
 import { startSession } from "./session.js";
 
 let stopFn = null;
+let recordingOptions = {
+  inlineStylesheet: false,
+  collectFonts: false,
+  slimDOM: true,
+};
+
+export function setRecordingOptions(options) {
+  recordingOptions = { ...recordingOptions, ...options };
+}
 
 export function startRecording() {
   if (stopFn) {
     return;
   }
   
+  const slimDOMOptions = recordingOptions.slimDOM ? {
+    script: true,
+    comment: true,
+    headFavicon: true,
+    headWhitespace: true,
+    headMetaDescKeywords: true,
+    headMetaSocial: true,
+    headMetaRobots: true,
+    headMetaHttpEquiv: true,
+    headMetaAuthorship: true,
+    headMetaVerification: true,
+  } : {};
+  
   stopFn = record({
     emit(event) {
       pushEvent(event);
     },
     checkoutEveryNms: 30000,
-    inlineStylesheet: true,
-    collectFonts: true,
-    recordCSSVariables: true,
+    inlineStylesheet: recordingOptions.inlineStylesheet,
+    collectFonts: recordingOptions.collectFonts,
+    recordCSSVariables: recordingOptions.inlineStylesheet,
     inlineImages: false,
     maskInputOptions: { password: true },
     blockSelector: "[data-ql-block]",
@@ -26,6 +48,7 @@ export function startRecording() {
       scroll: 100,
       input: "last",
     },
+    slimDOMOptions,
   });
 }
 

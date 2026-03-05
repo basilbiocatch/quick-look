@@ -34,6 +34,8 @@ const projectSchema = new mongoose.Schema(
       minSampleSize: { type: Number, default: 50 },
       sensitivityThreshold: { type: Number, default: 0.5 },
     },
+    /** Data URL of project cover image (captured from a random session replay). Shown on project card with blur. */
+    thumbnailUrl: { type: String, default: null },
   },
   { collection: "quicklook_projects", versionKey: false }
 );

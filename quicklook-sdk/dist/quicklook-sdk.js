@@ -568,15 +568,20 @@
 
   // src/activity.js
   var inactivityTimer = null;
+  var maxInactivityTimer = null;
   var isPaused = false;
+  var pausedByVisibility = false;
   var inactivityTimeout = 5 * 60 * 1e3;
+  var MAX_INACTIVITY_BEFORE_END_MS = 30 * 60 * 1e3;
   var pauseOnHidden = true;
   var activityListenersAttached = false;
   var pauseCallback = null;
   var resumeCallback = null;
-  function setActivityCallbacks(onPause, onResume) {
+  var maxInactivityCallback = null;
+  function setActivityCallbacks(onPause, onResume, onMaxInactivityReached) {
     pauseCallback = onPause;
     resumeCallback = onResume;
+    maxInactivityCallback = typeof onMaxInactivityReached === "function" ? onMaxInactivityReached : null;
   }
   function setActivityConfig(config) {
     if (config.inactivityTimeout !== void 0) {
@@ -589,13 +594,30 @@
   function isPausedByActivity() {
     return isPaused;
   }
-  function pauseRecording() {
+  function clearMaxInactivityTimer() {
+    if (maxInactivityTimer) {
+      clearTimeout(maxInactivityTimer);
+      maxInactivityTimer = null;
+    }
+  }
+  function pauseRecording(byVisibility = false) {
     if (isPaused) return;
     isPaused = true;
+    pausedByVisibility = byVisibility;
     if (pauseCallback) pauseCallback();
+    if (!byVisibility && inactivityTimeout > 0 && MAX_INACTIVITY_BEFORE_END_MS > inactivityTimeout) {
+      clearMaxInactivityTimer();
+      const remainingMs = MAX_INACTIVITY_BEFORE_END_MS - inactivityTimeout;
+      maxInactivityTimer = setTimeout(() => {
+        maxInactivityTimer = null;
+        if (maxInactivityCallback) maxInactivityCallback();
+      }, remainingMs);
+    }
   }
   function resumeRecording() {
     if (!isPaused) return;
+    clearMaxInactivityTimer();
+    pausedByVisibility = false;
     isPaused = false;
     if (resumeCallback) resumeCallback();
   }
@@ -603,13 +625,13 @@
     if (inactivityTimer) clearTimeout(inactivityTimer);
     if (isPaused || inactivityTimeout <= 0) return;
     inactivityTimer = setTimeout(() => {
-      pauseRecording();
+      pauseRecording(false);
     }, inactivityTimeout);
   }
   function handleVisibilityChange() {
     if (!pauseOnHidden) return;
     if (typeof document !== "undefined" && document.hidden) {
-      pauseRecording();
+      pauseRecording(true);
     } else {
       if (isPaused) {
         resumeRecording();
@@ -645,6 +667,7 @@
       clearTimeout(inactivityTimer);
       inactivityTimer = null;
     }
+    clearMaxInactivityTimer();
     document.removeEventListener("visibilitychange", handleVisibilityChange);
     const activityEvents = ["mousedown", "keydown", "scroll", "touchstart"];
     activityEvents.forEach((event) => {
@@ -5079,6 +5102,24 @@
     if (flushTimer) {
       clearTimeout(flushTimer);
       flushTimer = null;
+    }
+  }
+  function resetAfterSessionEnd() {
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+    if (firstChunkTimer) {
+      clearTimeout(firstChunkTimer);
+      firstChunkTimer = null;
+    }
+    eventBuffer = [];
+    chunkIndex = 0;
+    if (typeof sessionStorage !== "undefined") {
+      try {
+        sessionStorage.setItem(STORAGE_CHUNK_KEY, "0");
+      } catch (_) {
+      }
     }
   }
 
@@ -17357,18 +17398,38 @@
 
   // src/record.js
   var stopFn = null;
+  var recordingOptions = {
+    inlineStylesheet: false,
+    collectFonts: false,
+    slimDOM: true
+  };
+  function setRecordingOptions(options) {
+    recordingOptions = { ...recordingOptions, ...options };
+  }
   function startRecording() {
     if (stopFn) {
       return;
     }
+    const slimDOMOptions = recordingOptions.slimDOM ? {
+      script: true,
+      comment: true,
+      headFavicon: true,
+      headWhitespace: true,
+      headMetaDescKeywords: true,
+      headMetaSocial: true,
+      headMetaRobots: true,
+      headMetaHttpEquiv: true,
+      headMetaAuthorship: true,
+      headMetaVerification: true
+    } : {};
     stopFn = record({
       emit(event) {
         pushEvent3(event);
       },
       checkoutEveryNms: 3e4,
-      inlineStylesheet: true,
-      collectFonts: true,
-      recordCSSVariables: true,
+      inlineStylesheet: recordingOptions.inlineStylesheet,
+      collectFonts: recordingOptions.collectFonts,
+      recordCSSVariables: recordingOptions.inlineStylesheet,
       inlineImages: false,
       maskInputOptions: { password: true },
       blockSelector: "[data-ql-block]",
@@ -17377,7 +17438,8 @@
         mousemove: 50,
         scroll: 100,
         input: "last"
-      }
+      },
+      slimDOMOptions
     });
   }
   function stopRecording() {
@@ -17392,7 +17454,7 @@
 
   // src/init.js
   var DEFAULT_API_URL = "https://localhost:3080";
-  var KNOWN_OPTIONS = /* @__PURE__ */ new Set(["apiUrl", "retentionDays", "captureStorage", "workerUrl", "excludedUrls", "includedUrls", "inactivityTimeout", "pauseOnHidden", "maxSessionDuration"]);
+  var KNOWN_OPTIONS = /* @__PURE__ */ new Set(["apiUrl", "retentionDays", "captureStorage", "workerUrl", "excludedUrls", "includedUrls", "inactivityTimeout", "pauseOnHidden", "maxSessionDuration", "inlineStylesheet", "collectFonts", "slimDOM"]);
   function pushEventAndMaybeStart(ev) {
     pushEvent3(ev);
   }
@@ -17460,6 +17522,11 @@
       inactivityTimeout: options.inactivityTimeout !== void 0 ? options.inactivityTimeout : 5 * 60 * 1e3,
       pauseOnHidden: options.pauseOnHidden !== void 0 ? options.pauseOnHidden : true
     });
+    setRecordingOptions({
+      inlineStylesheet: options.inlineStylesheet !== void 0 ? options.inlineStylesheet : false,
+      collectFonts: options.collectFonts !== void 0 ? options.collectFonts : false,
+      slimDOM: options.slimDOM !== void 0 ? options.slimDOM : true
+    });
     setActivityCallbacks(
       () => {
         if (recordingStarted) {
@@ -17470,8 +17537,16 @@
       },
       () => {
         if (recordingStarted) {
-          startRecording();
-          startScheduler();
+          ensureSessionStarted().then(() => {
+            startRecording();
+            startScheduler();
+          });
+        }
+      },
+      () => {
+        if (recordingStarted) {
+          endSession(void 0, { clearStorage: true });
+          resetAfterSessionEnd();
         }
       }
     );
@@ -17546,6 +17621,20 @@
   }
   function identify(data) {
     setIdentity(data);
+    const sid = getSessionId();
+    const apiUrl2 = getApiUrl();
+    if (sid && apiUrl2 && data && typeof data === "object") {
+      const user2 = getIdentity();
+      if (Object.keys(user2).length > 0) {
+        fetch(`${apiUrl2}/api/quicklook/sessions/${encodeURIComponent(sid)}/identify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user: user2 }),
+          keepalive: true
+        }).catch(() => {
+        });
+      }
+    }
   }
   function stop() {
     stopActivityMonitoring();
@@ -17562,13 +17651,17 @@
     const api2 = {
       init,
       identify,
+      getIdentity,
       stop,
       getSessionId: getSessionIdPublic
     };
     if (typeof window !== "undefined") {
-      window.addEventListener("pagehide", () => {
+      window.addEventListener("pagehide", (e) => {
         if (recordingStarted) {
           flushAndEnd();
+        }
+        if (!e.persisted) {
+          endSession({ status: "close", reason: "pagehide" });
         }
       });
       window.addEventListener("beforeunload", () => {
@@ -17583,7 +17676,7 @@
   // src/index.js
   var api = createQuicklook();
   function dispatch(cmd, ...args) {
-    if (api[cmd]) api[cmd](...args);
+    if (api[cmd]) return api[cmd](...args);
   }
   function quicklookGlobal() {
     const q = window.quicklook && window.quicklook.q;
@@ -17594,7 +17687,7 @@
       }
     }
     if (arguments.length) {
-      dispatch(arguments[0], ...Array.prototype.slice.call(arguments, 1));
+      return dispatch(arguments[0], ...Array.prototype.slice.call(arguments, 1));
     }
   }
   if (typeof window !== "undefined") {
@@ -17606,6 +17699,13 @@
     Object.defineProperty(window.quicklook, "sessionId", {
       get() {
         return getSessionId();
+      },
+      configurable: true,
+      enumerable: true
+    });
+    Object.defineProperty(window.quicklook, "identity", {
+      get() {
+        return api.getIdentity();
       },
       configurable: true,
       enumerable: true

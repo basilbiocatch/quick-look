@@ -4,14 +4,14 @@ import { setIdentity, getIdentity } from "./collectors/identity.js";
 import { patchConsole } from "./collectors/console.js";
 import { patchNetwork } from "./collectors/network.js";
 import { captureStorageSnapshot } from "./collectors/storage.js";
-import { setConfig, endSession, getSessionId, isStarted, isPageExcluded } from "./session.js";
-import { pushEvent, setWorker, setWorkerUrl, startScheduler, flushAndEnd, flush, flushPendingWorkerChunks, stopScheduler } from "./upload.js";
-import { startRecording, stopRecording, ensureSessionStarted } from "./record.js";
+import { setConfig, endSession, getSessionId, getApiUrl, isStarted, isPageExcluded } from "./session.js";
+import { pushEvent, setWorker, setWorkerUrl, startScheduler, flushAndEnd, flush, flushPendingWorkerChunks, stopScheduler, resetAfterSessionEnd } from "./upload.js";
+import { startRecording, stopRecording, ensureSessionStarted, setRecordingOptions } from "./record.js";
 import { setActivityConfig, setActivityCallbacks, startActivityMonitoring, stopActivityMonitoring } from "./activity.js";
 
 const DEFAULT_API_URL = "https://localhost:3080";
 
-const KNOWN_OPTIONS = new Set(["apiUrl", "retentionDays", "captureStorage", "workerUrl", "excludedUrls", "includedUrls", "inactivityTimeout", "pauseOnHidden", "maxSessionDuration"]);
+const KNOWN_OPTIONS = new Set(["apiUrl", "retentionDays", "captureStorage", "workerUrl", "excludedUrls", "includedUrls", "inactivityTimeout", "pauseOnHidden", "maxSessionDuration", "inlineStylesheet", "collectFonts", "slimDOM"]);
 
 function pushEventAndMaybeStart(ev) {
   pushEvent(ev);
@@ -88,6 +88,12 @@ function init(projectKey, options = {}) {
     inactivityTimeout: options.inactivityTimeout !== undefined ? options.inactivityTimeout : 5 * 60 * 1000,
     pauseOnHidden: options.pauseOnHidden !== undefined ? options.pauseOnHidden : true,
   });
+
+  setRecordingOptions({
+    inlineStylesheet: options.inlineStylesheet !== undefined ? options.inlineStylesheet : false,
+    collectFonts: options.collectFonts !== undefined ? options.collectFonts : false,
+    slimDOM: options.slimDOM !== undefined ? options.slimDOM : true,
+  });
   
   setActivityCallbacks(
     () => {
@@ -99,8 +105,16 @@ function init(projectKey, options = {}) {
     },
     () => {
       if (recordingStarted) {
-        startRecording();
-        startScheduler();
+        ensureSessionStarted().then(() => {
+          startRecording();
+          startScheduler();
+        });
+      }
+    },
+    () => {
+      if (recordingStarted) {
+        endSession(undefined, { clearStorage: true });
+        resetAfterSessionEnd();
       }
     }
   );
@@ -180,6 +194,19 @@ function init(projectKey, options = {}) {
 
 function identify(data) {
   setIdentity(data);
+  const sid = getSessionId();
+  const apiUrl = getApiUrl();
+  if (sid && apiUrl && data && typeof data === "object") {
+    const user = getIdentity();
+    if (Object.keys(user).length > 0) {
+      fetch(`${apiUrl}/api/quicklook/sessions/${encodeURIComponent(sid)}/identify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user }),
+        keepalive: true,
+      }).catch(() => {});
+    }
+  }
 }
 
 function stop() {
@@ -199,18 +226,19 @@ export function createQuicklook() {
   const api = {
     init,
     identify,
+    getIdentity,
     stop,
     getSessionId: getSessionIdPublic,
   };
   if (typeof window !== "undefined") {
-    // On any page unload, just flush buffered events — never destroy the session.
-    // Session continuity relies on sessionStorage (persists across same-origin
-    // navigations within the same tab). The server closes stale sessions via
-    // inactivity timeout, so we don't need to guess whether the user is
-    // navigating vs. closing the tab.
-    window.addEventListener("pagehide", () => {
+    window.addEventListener("pagehide", (e) => {
       if (recordingStarted) {
         flushAndEnd();
+      }
+      // If the page isn't being kept in bfcache, the tab is closing or
+      // navigating away from this origin — send an explicit end signal.
+      if (!e.persisted) {
+        endSession({ status: "close", reason: "pagehide" });
       }
     });
 

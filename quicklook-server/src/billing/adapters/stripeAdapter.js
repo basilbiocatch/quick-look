@@ -52,6 +52,48 @@ const stripeAdapter = {
     return { redirectUrl: session.url };
   },
 
+  async getCheckoutSession(sessionId) {
+    if (!stripe || !sessionId) return null;
+    try {
+      const session = await stripe.checkout.sessions.retrieve(sessionId, {
+        expand: ["subscription"],
+      });
+      const subId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
+      const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id;
+      return {
+        customerId: customerId || null,
+        subscriptionId: subId || null,
+        metadata: session.metadata || {},
+        paymentStatus: session.payment_status || "unpaid",
+      };
+    } catch (err) {
+      if (err.code === "resource_missing_deleted") return null;
+      throw err;
+    }
+  },
+
+  /** List active/trialing subscriptions for a customer; returns first one or null. */
+  async getActiveSubscriptionIdForCustomer(customerId) {
+    if (!stripe || !customerId) return null;
+    try {
+      const list = await stripe.subscriptions.list({
+        customer: customerId,
+        status: "active",
+        limit: 1,
+      });
+      const trialing = await stripe.subscriptions.list({
+        customer: customerId,
+        status: "trialing",
+        limit: 1,
+      });
+      const sub = list.data[0] || trialing.data[0];
+      return sub ? sub.id : null;
+    } catch (err) {
+      if (err.code === "resource_missing_deleted") return null;
+      throw err;
+    }
+  },
+
   async getSubscription(subscriptionId) {
     if (!stripe) return null;
     try {

@@ -12,16 +12,14 @@ initQuicklookWebsite();
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(
-  <React.StrictMode>
-    <ThemeProvider theme={darkTheme}>
-      <CssBaseline />
-      <BrowserRouter basename={getBasePath()}>
-        <AuthProvider>
-          <App />
-        </AuthProvider>
-      </BrowserRouter>
-    </ThemeProvider>
-  </React.StrictMode>
+  <ThemeProvider theme={darkTheme}>
+    <CssBaseline />
+    <BrowserRouter basename={getBasePath()}>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </BrowserRouter>
+  </ThemeProvider>
 );
 
 // Prevent FOUC: show body only after first paint with styles (MUI/Emotion inject on render)

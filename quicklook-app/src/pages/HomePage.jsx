@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Box,
@@ -17,29 +17,13 @@ import {
 import AddIcon from "@mui/icons-material/Add";
 import FolderIcon from "@mui/icons-material/Folder";
 import { useAuth } from "../contexts/AuthContext";
-import { getProjects } from "../api/quicklookApi";
+import { useProjects } from "../contexts/ProjectsContext";
 
 export default function HomePage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [projects, setProjects] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { projects, loading } = useProjects();
   const [menuAnchor, setMenuAnchor] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    getProjects()
-      .then((res) => {
-        if (!cancelled && res.data?.data) setProjects(res.data.data);
-      })
-      .catch(() => {
-        if (!cancelled) setProjects([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, []);
 
   const handleLogout = () => {
     setMenuAnchor(null);
@@ -141,13 +125,41 @@ export default function HomePage() {
                       sx={{
                         height: 100,
                         bgcolor: "action.hover",
-                        background: `linear-gradient(135deg, ${"primary.main"}22 0%, ${"primary.dark"}11 100%)`,
+                        background: project.thumbnailUrl
+                          ? undefined
+                          : `linear-gradient(135deg, ${"primary.main"}22 0%, ${"primary.dark"}11 100%)`,
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
+                        overflow: "hidden",
+                        position: "relative",
                       }}
                     >
-                      <FolderIcon sx={{ fontSize: 48, color: "primary.main", opacity: 0.9 }} />
+                      {project.thumbnailUrl ? (
+                        <Box
+                          component="img"
+                          src={project.thumbnailUrl}
+                          alt=""
+                          sx={{
+                            position: "absolute",
+                            inset: 0,
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                            filter: "blur(3px)",
+                            transform: "scale(1.05)",
+                          }}
+                        />
+                      ) : null}
+                      <FolderIcon
+                        sx={{
+                          fontSize: 48,
+                          color: "primary.main",
+                          opacity: 0.9,
+                          position: "relative",
+                          zIndex: 1,
+                        }}
+                      />
                     </Box>
                     <CardContent>
                       <Typography variant="subtitle1" fontWeight={600} noWrap>

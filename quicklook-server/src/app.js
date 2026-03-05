@@ -56,6 +56,26 @@ app.post(
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
+// Ensure 403 responses always have a JSON body (so clients never see empty {})
+app.use((req, res, next) => {
+  const origJson = res.json.bind(res);
+  res.json = function (body) {
+    if (res.statusCode === 403) {
+      const o = body && typeof body === "object" ? body : {};
+      if (!o.error && !o.code) {
+        body = {
+          success: false,
+          ...o,
+          error: "Forbidden.",
+          code: "FORBIDDEN",
+        };
+      }
+    }
+    return origJson(body);
+  };
+  next();
+});
+
 app.use("/api/auth", authRoutes);
 app.use("/api/quicklook", quicklookRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
