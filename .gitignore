@@ -10,3 +10,6 @@ quicklook-server/quick-look-*-*.json
 # Python
 __pycache__/
 *.pyc
+
+# Git worktrees (isolated branches)
+.worktrees/
