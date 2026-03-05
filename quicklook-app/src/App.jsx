@@ -22,6 +22,8 @@ import NewProjectPage from "./pages/NewProjectPage";
 import ProjectSettingsPage from "./pages/ProjectSettingsPage";
 import SdkDocsPage from "./pages/SdkDocsPage";
 import PublicReplayPage from "./pages/PublicReplayPage";
+import BlogPage from "./pages/BlogPage";
+import BlogArticlePage from "./pages/BlogArticlePage";
 import PlanManagerPage from "./pages/admin/PlanManagerPage";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AdminRoute from "./components/AdminRoute";
@@ -204,6 +206,8 @@ function App() {
     <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
       <SupportChatBubble />
       <Routes>
+        <Route path="/blog" element={<BlogPage />} />
+        <Route path="/blog/:slug" element={<BlogArticlePage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />

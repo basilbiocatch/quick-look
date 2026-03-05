@@ -16,6 +16,7 @@ import InsightsIcon from "@mui/icons-material/Insights";
 import CheckIcon from "@mui/icons-material/Check";
 import { getPublicAssetUrl, getBasePath } from "../utils/baseUrl";
 import { getPlansConfig } from "../api/subscriptionApi";
+import { BLOG_ARTICLES } from "../data/blogArticles";
 
 const sectionSx = {
   py: { xs: 6, md: 10 },
@@ -110,6 +111,18 @@ export default function MarketingHomePage() {
             </Link>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, pointerEvents: "auto" }}>
               <Button
+                component={Link}
+                to="/blog"
+                color="inherit"
+                sx={{
+                  color: "text.secondary",
+                  transition: "color 0.2s ease, transform 0.2s ease",
+                  "&:hover": { color: "text.primary", transform: "translateY(-1px)" },
+                }}
+              >
+                Blog
+              </Button>
+              <Button
                 component="a"
                 href="#pricing"
                 color="inherit"
@@ -172,7 +185,10 @@ export default function MarketingHomePage() {
                 textAlign: "center",
               }}
             >
-              Session{" "}
+              <Box component="span" sx={{ background: primaryGradient, backgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+                AI that explains why users abandon your product
+              </Box>
+              {" "}
               <Box
                 component="span"
                 sx={{
@@ -217,13 +233,10 @@ export default function MarketingHomePage() {
                   }}
                 />
               </Box>
-              {" "}replay &amp; DevTools,{" "}
-              <Box component="span" sx={{ background: primaryGradient, backgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-                built for developers
-              </Box>
+              {" "}through recordings
             </Typography>
             <Typography variant="h6" color="text.secondary" sx={{ mb: 4, fontWeight: 400, fontSize: { xs: "1rem", md: "1.25rem" } }} component="p">
-              See exactly what users did. Debug with session recordings and integrated DevTools—reproduce bugs and improve UX with no guesswork.
+              Session replays plus AI—see what users did and get clear reasons they left. Fix drop-off and improve UX with no guesswork.
             </Typography>
             <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, justifyContent: "center" }}>
               <Button
@@ -373,6 +386,58 @@ export default function MarketingHomePage() {
               </Card>
             </Grid>
           </Grid>
+        </Container>
+      </Box>
+
+      {/* Blog / SEO resources */}
+      <Box component="section" sx={{ ...sectionSx, bgcolor: "rgba(255,255,255,0.02)" }} aria-labelledby="blog-heading">
+        <Container maxWidth="lg">
+          <Typography id="blog-heading" component="h2" variant="h4" fontWeight={700} textAlign="center" sx={{ mb: 2 }}>
+            From the blog
+          </Typography>
+          <Typography variant="body1" color="text.secondary" textAlign="center" sx={{ mb: 4, maxWidth: 560, mx: "auto" }}>
+            Compare QuickLook to Smartlook, Hotjar, and FullStory—and see why teams choose session replay with DevTools and AI.
+          </Typography>
+          <Grid container spacing={2} justifyContent="center">
+            {BLOG_ARTICLES.map((article) => (
+              <Grid item xs={12} sm={6} md={4} key={article.slug}>
+                <Button
+                  component={Link}
+                  to={`/blog/${article.slug}`}
+                  fullWidth
+                  sx={{
+                    justifyContent: "flex-start",
+                    textAlign: "left",
+                    py: 2,
+                    px: 2,
+                    border: "1px solid",
+                    borderColor: "divider",
+                    borderRadius: 2,
+                    bgcolor: "background.paper",
+                    color: "text.primary",
+                    "&:hover": {
+                      borderColor: "primary.main",
+                      bgcolor: "rgba(190,149,250,0.08)",
+                    },
+                  }}
+                >
+                  <Box>
+                    <Typography variant="subtitle1" fontWeight={700} display="block">
+                      {article.title}
+                    </Typography>
+                    <Typography variant="body2" color="primary.main" fontWeight={600}>
+                      {article.subtitle}
+                    </Typography>
+                  </Box>
+                </Button>
+              </Grid>
+            ))}
+          </Grid>
+          <Box sx={{ textAlign: "center", mt: 3 }}>
+            <Button component={Link} to="/blog" variant="outlined" size="large">
+              View all articles
+            </Button>
+          </Box>
         </Container>
       </Box>
 
@@ -594,6 +659,9 @@ export default function MarketingHomePage() {
               © {new Date().getFullYear()} Quicklook. Session replay &amp; DevTools for developers.
             </Typography>
             <Box sx={{ display: "flex", gap: 2 }}>
+              <Button component={Link} to="/blog" size="small" color="inherit" sx={{ color: "text.secondary" }}>
+                Blog
+              </Button>
               <Button component={Link} to="/login" size="small" color="inherit" sx={{ color: "text.secondary" }}>
                 Log in
               </Button>

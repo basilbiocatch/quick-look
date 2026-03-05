@@ -115,9 +115,10 @@ function suppressNodeCronMissedWarnings() {
 }
 
 function startServer(server) {
-  server.listen(PORT, () => {
+  const host = "0.0.0.0"; // required for Cloud Run so the health check can reach the container
+  server.listen(PORT, host, () => {
     const scheme = server instanceof https.Server ? "https" : "http";
-    logger.info(`Quicklook server listening on ${scheme}://localhost:${PORT}`);
+    logger.info(`Quicklook server listening on ${scheme}://${host}:${PORT}`);
     suppressNodeCronMissedWarnings();
     startQuicklookRetentionJob();
     startAutoCloseInactiveSessionsJob();
