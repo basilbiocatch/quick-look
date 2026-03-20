@@ -5,6 +5,7 @@ import InsightsPage from "./pages/InsightsPage";
 import ReportsPage from "./pages/ReportsPage";
 import AbTestsPage from "./pages/AbTestsPage";
 import AccuracyPage from "./pages/AccuracyPage";
+import IssuesPage from "./pages/IssuesPage";
 import HomePage from "./pages/HomePage";
 import MarketingHomePage from "./pages/MarketingHomePage";
 import LoginPage from "./pages/LoginPage";
@@ -260,6 +261,14 @@ function App() {
             element={
               <PageTransition>
                 <AccuracyPage />
+              </PageTransition>
+            }
+          />
+          <Route
+            path="projects/:projectKey/issues"
+            element={
+              <PageTransition>
+                <IssuesPage />
               </PageTransition>
             }
           />

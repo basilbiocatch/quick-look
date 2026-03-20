@@ -101,12 +101,17 @@ const stripeAdapter = {
       const item = sub.items?.data?.[0];
       const price = item?.price;
       const interval = price?.recurring?.interval === "year" ? "annual" : "monthly";
+      const unitAmount = price?.unit_amount;
+      const amount = unitAmount != null ? unitAmount / 100 : undefined;
+      const currency = (price?.currency || "usd").toUpperCase();
       return {
         status: normalizeStatus(sub.status),
         priceId: price?.id || sub.items?.data?.[0]?.price?.id,
         interval,
         currentPeriodEnd: sub.current_period_end ? new Date(sub.current_period_end * 1000) : undefined,
         cancelAtPeriodEnd: !!sub.cancel_at_period_end,
+        amount,
+        currency,
       };
     } catch (err) {
       if (err.code === "resource_missing_deleted") return null;
@@ -229,9 +234,12 @@ const stripeAdapter = {
       }
       case "invoice.payment_failed": {
         const inv = event.data.object;
+        const errorMessage =
+          inv.last_payment_error?.message || inv.last_finalization_error?.message || null;
         push("invoice.failed", {
           subscriptionId: inv.subscription,
           customerId: inv.customer,
+          errorMessage,
         });
         break;
       }

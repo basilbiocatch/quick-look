@@ -16,6 +16,7 @@ import VideocamIcon from "@mui/icons-material/Videocam";
 import LightbulbIcon from "@mui/icons-material/Lightbulb";
 import AssessmentIcon from "@mui/icons-material/Assessment";
 import ScienceIcon from "@mui/icons-material/Science";
+import BugReportIcon from "@mui/icons-material/BugReport";
 import SettingsIcon from "@mui/icons-material/Settings";
 import FolderIcon from "@mui/icons-material/Folder";
 import AddIcon from "@mui/icons-material/Add";
@@ -65,6 +66,7 @@ export default function MainNavBar() {
   const isInsightsActive = Boolean(routeProjectKey && pathname.includes("/insights"));
   const isReportsActive = Boolean(routeProjectKey && pathname.includes("/reports"));
   const isAbTestsActive = Boolean(routeProjectKey && pathname.includes("/ab-tests"));
+  const isIssuesActive = Boolean(routeProjectKey && pathname.includes("/issues"));
   const isAccountActive = pathname === "/account";
 
   const selectedProject = projectKey ? projects.find((p) => p.projectKey === projectKey) : null;
@@ -265,6 +267,29 @@ export default function MainNavBar() {
             }}
           >
             <ScienceIcon />
+          </IconButton>
+        </Tooltip>
+      </Box>
+
+      {/* Issues (Bugs dashboard) */}
+      <Box sx={{ display: "flex", justifyContent: "center", py: 0.5 }}>
+        <Tooltip title="Issues" placement="right">
+          <IconButton
+            onClick={(e) => {
+              if (projectKey) navigate(`/projects/${projectKey}/issues`);
+              else setProjectMenuAnchor(e.currentTarget);
+            }}
+            sx={{
+              ...iconButtonSx,
+              ...(isIssuesActive && {
+                color: "#fff",
+                bgcolor: "rgba(255,255,255,0.18)",
+                "&:hover": { bgcolor: "rgba(255,255,255,0.22)" },
+              }),
+              "& .MuiSvgIcon-root": { fontSize: 24 },
+            }}
+          >
+            <BugReportIcon />
           </IconButton>
         </Tooltip>
       </Box>

@@ -247,6 +247,19 @@
         orig[level].apply(console, args);
       };
     });
+    if (typeof window !== "undefined") {
+      window.addEventListener("error", (e) => {
+        const msg = [e.message, e.filename, e.lineno, e.colno].filter((x2) => x2 != null).join(" ");
+        const stack = e.error?.stack ? `
+${e.error.stack}` : "";
+        capture("error", [msg + stack]);
+      });
+      window.addEventListener("unhandledrejection", (e) => {
+        const reason = e.reason;
+        const msg = reason?.message != null ? String(reason.message) : String(reason);
+        capture("error", [`Unhandled rejection: ${msg}`]);
+      });
+    }
   }
 
   // src/collectors/network.js
@@ -17444,7 +17457,14 @@
   }
   function stopRecording() {
     if (stopFn && typeof stopFn === "function") {
-      stopFn();
+      try {
+        stopFn();
+      } catch (e) {
+        if (e?.name === "SecurityError" || e?.message && String(e.message).toLowerCase().includes("security")) {
+        } else {
+          throw e;
+        }
+      }
       stopFn = null;
     }
   }

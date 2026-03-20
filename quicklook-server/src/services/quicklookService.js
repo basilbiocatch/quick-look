@@ -242,6 +242,9 @@ export const QuicklookService = {
         sessionDoc.chunkCount = indexBasedCount;
       }
       
+      // Update event count
+      sessionDoc.eventCount = (sessionDoc.eventCount || 0) + events.length;
+      
       const existing = new Set(Array.isArray(sessionDoc.pages) ? sessionDoc.pages : []);
       const hrefsFromChunk = events.filter((e) => e.type === 4 && e.data?.href).map((e) => String(e.data.href).trim()).filter(Boolean);
       for (const href of hrefsFromChunk) existing.add(href);
@@ -305,7 +308,7 @@ export const QuicklookService = {
     return { success: true };
   },
 
-  async getSessions({ projectKey, status, from, to, limit = 50, skip = 0, ipAddress, deviceId, userEmail }) {
+  async getSessions({ projectKey, status, from, to, limit = 50, skip = 0, ipAddress, deviceId, userEmail, sessionIds: sessionIdsFilter }) {
     const query = {};
     if (projectKey) query.projectKey = projectKey;
     if (status) query.status = status;
@@ -317,11 +320,16 @@ export const QuicklookService = {
       if (from) query.createdAt.$gte = new Date(from);
       if (to) query.createdAt.$lte = new Date(to);
     }
+    if (Array.isArray(sessionIdsFilter) && sessionIdsFilter.length > 0) {
+      const ids = sessionIdsFilter.slice(0, 500);
+      query.sessionId = { $in: ids };
+    }
 
     const useStatsCache =
       !(ipAddress && String(ipAddress).trim()) &&
       !(deviceId && String(deviceId).trim()) &&
-      !(userEmail && String(userEmail).trim());
+      !(userEmail && String(userEmail).trim()) &&
+      !(Array.isArray(sessionIdsFilter) && sessionIdsFilter.length > 0);
     const cacheKey = useStatsCache ? getSessionsStatsCacheKey(projectKey, status, from, to) : null;
     const cached = cacheKey ? getSessionsStatsFromCache(cacheKey) : null;
 
@@ -616,7 +624,7 @@ export const QuicklookService = {
           const createdAt = sessionDoc.createdAt instanceof Date ? sessionDoc.createdAt : new Date(sessionDoc.createdAt);
           sessionDoc.duration = closedAt.getTime() - createdAt.getTime();
           
-          // Recalculate pages from all chunks
+          // Recalculate pages and event count from all chunks
           const allChunks = await chunkStorage.getChunks(session.sessionId);
           const allEvents = allChunks.flatMap((c) => (Array.isArray(c.events) ? c.events : []));
           const allHrefs = new Set(
@@ -627,8 +635,9 @@ export const QuicklookService = {
             sessionDoc.pageCount = sessionDoc.pages.length;
           }
           
-          // Update chunk count
+          // Update chunk count and event count
           sessionDoc.chunkCount = allChunks.length;
+          sessionDoc.eventCount = allEvents.length;
           
           await sessionDoc.save();
           closedCount++;

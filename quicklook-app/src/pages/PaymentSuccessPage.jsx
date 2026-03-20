@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Box, Typography, Button } from "@mui/material";
 import { useAuth } from "../contexts/AuthContext";
 import { confirmCheckout } from "../api/subscriptionApi";
+import { trackFBPurchase } from "../utils/facebookPixel";
 
 export default function PaymentSuccessPage() {
   const navigate = useNavigate();
@@ -14,7 +15,9 @@ export default function PaymentSuccessPage() {
     (async () => {
       if (sessionId) {
         try {
-          await confirmCheckout(sessionId);
+          const res = await confirmCheckout(sessionId);
+          const paymentDetails = res?.data?.paymentDetails;
+          if (paymentDetails) trackFBPurchase(paymentDetails);
         } catch (_) {
           // Webhook may have already run; continue to refresh user
         }

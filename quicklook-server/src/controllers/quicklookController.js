@@ -124,12 +124,17 @@ export const updateSessionIdentify = async (req, res) => {
 
 export const getSessions = async (req, res) => {
   try {
-    const { projectKey, status, from, to, limit, skip, ipAddress, deviceId, userEmail } = req.query;
+    const { projectKey, status, from, to, limit, skip, ipAddress, deviceId, userEmail, sessionIds: sessionIdsParam } = req.query;
     if (!projectKey) {
       return res.status(400).json({ success: false, error: "projectKey is required" });
     }
     const project = await getProjectForUser(projectKey, req.user.userId, res);
     if (!project) return;
+    const sessionIds = sessionIdsParam
+      ? (Array.isArray(sessionIdsParam) ? sessionIdsParam : String(sessionIdsParam).split(","))
+          .map((id) => String(id).trim())
+          .filter(Boolean)
+      : undefined;
     const result = await QuicklookService.getSessions({
       projectKey,
       status,
@@ -140,6 +145,7 @@ export const getSessions = async (req, res) => {
       ipAddress: ipAddress || undefined,
       deviceId: deviceId || undefined,
       userEmail: userEmail || undefined,
+      sessionIds,
     });
     return res.json(result);
   } catch (err) {

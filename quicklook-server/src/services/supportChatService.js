@@ -5,10 +5,17 @@ import { pickRandomAgentName } from "../configs/supportAgentNames.js";
 import logger from "../configs/loggingConfig.js";
 import { sendSupportEscalationEmail } from "./emailService.js";
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
-const OPENAI_ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID || "";
+// Read at use time so production env/secrets (e.g. Cloud Run Secret Manager) are available even if they weren't at module load
+function getOpenAIConfig() {
+  const apiKey = (process.env.OPENAI_API_KEY || "").trim();
+  const assistantId = (process.env.OPENAI_ASSISTANT_ID || "").trim();
+  return { apiKey, assistantId };
+}
 
-const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
+function getOpenAIClient() {
+  const { apiKey } = getOpenAIConfig();
+  return apiKey ? new OpenAI({ apiKey }) : null;
+}
 
 const BASE_INSTRUCTIONS = `You are a friendly and empathetic support agent for QuickLook, a session recording and UX analytics product. Your goal is to help users with their questions and issues in a warm, conversational, and human way.
 
@@ -36,8 +43,10 @@ function getInstructionsForAgent(agentName) {
  * @returns {{ threadId: string, agentName: string }}
  */
 export async function createThread() {
+  const openai = getOpenAIClient();
+  const { assistantId } = getOpenAIConfig();
   if (!openai) throw new Error("OpenAI client not configured (OPENAI_API_KEY missing)");
-  if (!OPENAI_ASSISTANT_ID) throw new Error("OPENAI_ASSISTANT_ID is required");
+  if (!assistantId) throw new Error("OPENAI_ASSISTANT_ID is required");
 
   const thread = await openai.beta.threads.create();
   const agentName = pickRandomAgentName();
@@ -53,8 +62,10 @@ export async function createThread() {
  * @returns {Promise<{ reply: string }>}
  */
 export async function sendMessage(threadId, agentName, message, imageUrl = null) {
+  const openai = getOpenAIClient();
+  const { assistantId } = getOpenAIConfig();
   if (!openai) throw new Error("OpenAI client not configured (OPENAI_API_KEY missing)");
-  if (!OPENAI_ASSISTANT_ID) throw new Error("OPENAI_ASSISTANT_ID is required");
+  if (!assistantId) throw new Error("OPENAI_ASSISTANT_ID is required");
 
   const textContent = message && String(message).trim() ? String(message).trim() : null;
   
@@ -81,7 +92,7 @@ export async function sendMessage(threadId, agentName, message, imageUrl = null)
   });
 
   const run = await openai.beta.threads.runs.create(threadId, {
-    assistant_id: OPENAI_ASSISTANT_ID,
+    assistant_id: assistantId,
     instructions: getInstructionsForAgent(agentName),
   });
 
@@ -170,5 +181,6 @@ export function getGreetingMessage(agentName) {
 }
 
 export function isConfigured() {
-  return Boolean(OPENAI_API_KEY && OPENAI_ASSISTANT_ID);
+  const { apiKey, assistantId } = getOpenAIConfig();
+  return Boolean(apiKey && assistantId);
 }

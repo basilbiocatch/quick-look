@@ -25,6 +25,7 @@ export default defineConfig(({ mode }) => {
         "@mui/material/styles",
         "@mui/icons-material",
         "@mui/x-data-grid",
+        "rrweb-player",
       ],
     },
     server: {

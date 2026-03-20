@@ -27,6 +27,19 @@
     <meta name="twitter:title" content="Quicklook – Session Replay &amp; DevTools for Developers | Debug Faster" />
     <meta name="twitter:description" content="Session replay and DevTools built for developers. Record user sessions, debug with integrated DevTools, and ship faster. Free tier with 1,000 sessions." />
     <meta name="twitter:image" content="https://quicklook.io/og-image.png" />
+    <!-- Meta Pixel -->
+    <script>
+      !function(f,b,e,v,n,t,s)
+      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+      n.queue=[];t=b.createElement(e);t.async=!0;
+      t.src=v;s=b.getElementsByTagName(e)[0];
+      s.parentNode.insertBefore(t,s)}(window, document,'script',
+      'https://connect.facebook.net/en_US/fbevents.js');
+      fbq('init', '26259114400386356');
+      fbq('track', 'PageView');
+    </script>
     <!-- Preload LCP image -->
     <link rel="preload" href="/logo.png" as="image" />
     <!-- Prevent FOUC: hide body until app has painted with styles (see main.jsx) -->
@@ -37,6 +50,9 @@
     </style>
   </head>
   <body>
+    <noscript><img height="1" width="1" style="display:none"
+      src="https://www.facebook.com/tr?id=26259114400386356&amp;ev=PageView&amp;noscript=1"
+      alt="" /></noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

@@ -7,6 +7,7 @@ import * as insightsController from "../controllers/insightsController.js";
 import * as reportsController from "../controllers/reportsController.js";
 import * as abTestController from "../controllers/abTestController.js";
 import * as accuracyController from "../controllers/accuracyController.js";
+import * as issuesController from "../controllers/issuesController.js";
 import { requireAuth, requireEmailVerified } from "../middleware/jwtAuth.js";
 import { requirePlan } from "../middleware/requirePlan.js";
 import { validateOrigin } from "../middleware/validateOrigin.js";
@@ -75,5 +76,9 @@ router.patch("/ab-tests/:testId", requirePlan(["pro"]), abTestController.patchAb
 
 router.get("/accuracy-metrics", accuracyController.getAccuracyMetrics);
 router.post("/models/retrain", accuracyController.postModelsRetrain);
+
+router.get("/issues", issuesController.getIssues);
+router.get("/issues/daily", issuesController.getIssuesDaily);
+router.get("/issues/:issueId", issuesController.getIssueById);
 
 export default router;

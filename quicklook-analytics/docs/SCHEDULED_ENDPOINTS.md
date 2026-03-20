@@ -148,6 +148,63 @@ or
 
 ---
 
+## 7. Issues aggregation (bugs dashboard)
+
+| Item | Value |
+|------|--------|
+| **Endpoint** | `POST /issues/run` |
+| **Purpose** | Aggregate JS errors and warnings from session events into `quicklook_issues` and `quicklook_issue_occurrences` for the Issues (bugs) dashboard. Reads closed sessions since last run, fetches events (Mongo or GCS), extracts `ql_console` error/warn, normalizes signatures, upserts issues and occurrences. |
+| **Suggested schedule** | Every 6 hours (e.g. `0 */6 * * *`), same cadence as `/process`. |
+| **Query params** | `projectKey` (optional; omit to run for all projects) |
+| **Body** | Not used. |
+| **Notes** | Uses same MongoDB collections as quicklook-server (`quicklook_issues`, `quicklook_issue_occurrences`, `quicklook_issue_job_state`). No Gemini. |
+
+**Example:**  
+`POST <ANALYTICS_URL>/issues/run`  
+or  
+`POST <ANALYTICS_URL>/issues/run?projectKey=my-project`
+
+### Making the issues job run on schedule
+
+The **same** Cloud Scheduler job (every 6h) that triggers session processing can trigger the issues job by using **two push subscriptions** on the same topic:
+
+1. **analytics-subscription** → push to `<ANALYTICS_URL>/` or `<ANALYTICS_URL>/process` (session processing).
+2. **analytics-issues-subscription** → push to `<ANALYTICS_URL>/issues/run` (bugs aggregation).
+
+When you run `quicklook-analytics/infra/setup-pubsub.sh` with `CLOUD_RUN_URL` set, it creates/updates both subscriptions. Each time the scheduler publishes one message, both endpoints are invoked. No second scheduler job is required.
+
+If you only ran Pub/Sub setup before the issues feature existed, **re-run** `setup-pubsub.sh` so the second subscription is created:
+
+```bash
+export CLOUD_RUN_URL=https://quicklook-analytics-xxxx.run.app
+cd quicklook-analytics/infra && ./setup-pubsub.sh
+```
+
+### Verifying the issues job
+
+1. **Trigger manually (local)**  
+   With the analytics service running locally (same MongoDB as your app):
+   ```bash
+   curl -X POST "http://localhost:8080/issues/run"
+   ```
+   Response should include `success: true`, `sessionsProcessed`, `issuesCreated`, `occurrencesInserted`. If `sessionsProcessed === 0`, either there are no closed sessions in the lookback window or none have console error/warn events (`ql_console`).
+
+2. **Trigger manually (production)**  
+   ```bash
+   curl -X POST "https://<ANALYTICS_URL>/issues/run" -H "Authorization: Bearer $(gcloud auth print-identity-token)"
+   ```
+   (Use the same auth as for other protected analytics endpoints.)
+
+3. **Check data**  
+   - MongoDB: `quicklook_issues`, `quicklook_issue_occurrences`, `quicklook_issue_job_state` (per-project `lastProcessedClosedAt`).
+   - App: Issues (bugs) dashboard should list issues and occurrences after the job has run and sessions with JS errors/warnings exist.
+
+4. **Confirm it’s scheduled**  
+   - **Pub/Sub:** In GCP Console → Pub/Sub → Subscriptions, confirm `analytics-issues-subscription` exists and its push endpoint is `https://<your-analytics-url>/issues/run`.
+   - **Scheduler:** One job (e.g. `process-analytics`) publishing to the topic every 6h is enough; both subscriptions receive the message and invoke their endpoints.
+
+---
+
 ## Summary: what to schedule
 
 | # | Endpoint | Suggested frequency | Per project? |
@@ -158,6 +215,7 @@ or
 | 4 | `POST /reports/generate` | Daily 6 AM + Weekly Mon 6 AM | **Yes** |
 | 5 | `POST /patterns/sync` | After insights or weekly | **Yes** |
 | 6 | `POST /models/retrain` | Weekly or monthly | No (optional project filter) |
+| 7 | `POST /issues/run` | Every 6 hours | No (optional projectKey) |
 
 ---
 
@@ -174,7 +232,20 @@ Endpoints 2–5 require a `projectKey`. Two options:
 2. **Per-project scheduler jobs**  
    You create one Cloud Scheduler job per project (or a small script that creates jobs from a project list). Each job POSTs to the same endpoint with the right `projectKey` query param.
 
-For a small number of projects, (2) is simple. For many projects, (1) is easier to maintain. The next infrastructure step can be either adding a **`POST /schedule`** (or similar) handler that dispatches by `task` and iterates projects, or documenting the exact Cloud Scheduler + Pub/Sub setup for the per-project approach.
+For a small number of projects, (2) is simple. For many projects, (1) is easier to maintain.
+
+### Implemented: `POST /schedule` dispatcher
+
+The analytics service exposes **`POST /schedule`** for “all projects” jobs. It is invoked by a **separate topic** `quicklook-analytics-schedule` and one push subscription → `/schedule`. Message body (JSON, or Pub/Sub `message.data` base64): `{"task":"cluster"|"patterns_sync"|"reports"|"retrain", "type":"daily"|"weekly"|"monthly"}` (for `reports`, `type` is required). The handler lists project keys from closed sessions and runs the task per project (except `retrain`, which runs once for all).
+
+| task           | Effect |
+|----------------|--------|
+| `cluster`      | Run behavior clustering for each project (limit 500, dbscan). |
+| `patterns_sync` | Sync pattern library from insights for each project. |
+| `reports`      | Generate report per project; use `type`: daily, weekly, or monthly. |
+| `retrain`      | Retrain lift model once (all projects). |
+
+**Infra:** Run `quicklook-analytics/infra/setup-pubsub.sh` (creates the schedule topic and subscription) and `setup-scheduler-schedule.sh` (creates Cloud Scheduler jobs: `analytics-cluster`, `analytics-patterns-sync` every 6h; `analytics-reports-daily` daily 6 AM UTC; `analytics-reports-weekly` Mon 6 AM UTC; `analytics-retrain` Sun 3 AM UTC). See `infra/README.md`.
 
 ---
 

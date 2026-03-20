@@ -57,14 +57,16 @@ api.interceptors.response.use(
 
 /**
  * Fetches sessions.
- * Query params: from, to, and any rest (projectKey, deviceId, ipAddress, limit, skip).
- * deviceId is included in the request as a query param when provided in params.
+ * Query params: from, to, sessionIds (comma-separated or array), and any rest (projectKey, deviceId, ipAddress, limit, skip).
  */
 export const getSessions = (params) => {
-  const { from, to, ...rest } = params || {};
+  const { from, to, sessionIds, ...rest } = params || {};
   const query = { ...rest };
   if (from) query.from = typeof from === "number" ? new Date(from).toISOString() : from;
   if (to) query.to = typeof to === "number" ? new Date(to).toISOString() : to;
+  if (sessionIds != null) {
+    query.sessionIds = Array.isArray(sessionIds) ? sessionIds.join(",") : String(sessionIds);
+  }
   return api.get("/sessions", { params: query });
 };
 export const getSession = (id) => api.get(`/sessions/${id}`);
@@ -107,6 +109,14 @@ export const getAccuracyMetrics = (projectKey) =>
   api.get("/accuracy-metrics", { params: { projectKey } });
 export const postModelsRetrain = (projectKey) =>
   api.post("/models/retrain", {}, { params: projectKey ? { projectKey } : {} });
+
+export const getIssues = (projectKey, params) =>
+  api.get("/issues", { params: { projectKey, ...params } });
+/** Errors and warnings per day for the last N days. Params: segment, days. */
+export const getIssuesDaily = (projectKey, params) =>
+  api.get("/issues/daily", { params: { projectKey, ...params } });
+export const getIssueDetail = (projectKey, issueId, params) =>
+  api.get(`/issues/${issueId}`, { params: { projectKey, ...params } });
 
 export const getProjects = () => api.get("/projects");
 export const createProject = (body) => api.post("/projects", body);

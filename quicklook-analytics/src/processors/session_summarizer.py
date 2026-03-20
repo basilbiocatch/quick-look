@@ -139,6 +139,9 @@ Respond with a JSON object only (no markdown, no extra text):
 
     response = await generate(prompt, temperature=0.3, max_tokens=2048)
     if not response:
+        logger.warning(
+            "Session summary: no model response. Check GEMINI_API_KEY is set and Gemini API is reachable (see llm_client logs)."
+        )
         return {
             "narrative": "Summary unavailable (no model response).",
             "emotionalScore": 5,

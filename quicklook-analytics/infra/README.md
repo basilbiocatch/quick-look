@@ -11,8 +11,9 @@ Cloud infrastructure for the AI UX Analytics service: Pub/Sub trigger, push subs
 ## Order of operations
 
 1. **Deploy the Cloud Run service** (see [Deploying the service](#deploying-the-service) below). Note the service URL (e.g. `https://quicklook-analytics-xxxx.run.app`).
-2. **Create Pub/Sub topic and push subscription** using `setup-pubsub.sh`, passing the Cloud Run URL. If you run Pub/Sub setup before deploy, use a placeholder and update the subscription push endpoint after deploy.
-3. **Create the Cloud Scheduler job** using `setup-scheduler.sh` so the job publishes to the topic every 6 hours.
+2. **Create Pub/Sub topics and push subscriptions** using `setup-pubsub.sh`, passing the Cloud Run URL. If you run Pub/Sub setup before deploy, use a placeholder and update the subscription push endpoints after deploy.
+3. **Create the main Cloud Scheduler job** using `setup-scheduler.sh` (process + issues + insights every 6 hours).
+4. **Create the schedule jobs** (cluster, patterns, reports, retrain) using `setup-scheduler-schedule.sh` (optional but recommended).
 
 ## How to get the Cloud Run URL after deploy
 
@@ -28,8 +29,9 @@ Or in the [Cloud Run console](https://console.cloud.google.com/run): select the 
 
 | Script | Purpose |
 |--------|--------|
-| `setup-pubsub.sh` | Creates topic `quicklook-analytics-trigger` and push subscription `analytics-subscription` (ack-deadline 600). |
-| `setup-scheduler.sh` | Creates Cloud Scheduler job `process-analytics` (every 6 hours, publishes to the topic). |
+| `setup-pubsub.sh` | Creates topic `quicklook-analytics-trigger` with subscriptions: `analytics-subscription` (→ POST /), `analytics-issues-subscription` (→ POST /issues/run), `analytics-insights-subscription` (→ POST /insights/run). Also creates topic `quicklook-analytics-schedule` with `analytics-schedule-subscription` (→ POST /schedule). Ack-deadline 600. |
+| `setup-scheduler.sh` | Creates Cloud Scheduler job `process-analytics` (every 6 hours → trigger topic). Session process, issues, and insights run via the three push subscriptions. |
+| `setup-scheduler-schedule.sh` | Creates Cloud Scheduler jobs that publish to `quicklook-analytics-schedule`: `analytics-cluster`, `analytics-patterns-sync` (every 6h), `analytics-reports-daily` (daily 6 AM UTC), `analytics-reports-weekly` (Mon 6 AM UTC), `analytics-retrain` (Sun 3 AM UTC). |
 | `deploy.sh` | Optional: deploys the Cloud Run service from a container image. |
 
 ### Running the scripts
@@ -42,6 +44,7 @@ export CLOUD_RUN_URL=https://quicklook-analytics-xxxx.run.app
 ./setup-pubsub.sh
 
 ./setup-scheduler.sh
+./setup-scheduler-schedule.sh   # optional: cluster, patterns, reports, retrain
 ```
 
 Or with project as first argument:
@@ -107,7 +110,7 @@ gcloud run services add-iam-policy-binding quicklook-analytics \
 The **Cloud Scheduler** job uses a service account (often the default compute or a custom one) to publish to Pub/Sub. That account needs permission to publish to the topic:
 
 - **roles/pubsub.publisher** on the project, or
-- Topic-level IAM: grant **Pub/Sub Publisher** (or `roles/pubsub.publisher`) on the topic `quicklook-analytics-trigger` to the Scheduler job’s service account.
+- Topic-level IAM: grant **Pub/Sub Publisher** (or `roles/pubsub.publisher`) on the topics `quicklook-analytics-trigger` and `quicklook-analytics-schedule` to the Scheduler job’s service account.
 
 If the job fails with permission errors, add:
 
@@ -116,6 +119,12 @@ If the job fails with permission errors, add:
 TOPIC=quicklook-analytics-trigger
 SA="YOUR_SCHEDULER_SERVICE_ACCOUNT@your-gcp-project.iam.gserviceaccount.com"
 gcloud pubsub topics add-iam-policy-binding "$TOPIC" \
+  --member="serviceAccount:$SA" \
+  --role="roles/pubsub.publisher" \
+  --project="$GCP_PROJECT_ID"
+
+# Same for the schedule topic if you use setup-scheduler-schedule.sh:
+gcloud pubsub topics add-iam-policy-binding quicklook-analytics-schedule \
   --member="serviceAccount:$SA" \
   --role="roles/pubsub.publisher" \
   --project="$GCP_PROJECT_ID"

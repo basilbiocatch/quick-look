@@ -9,6 +9,8 @@ import {
   Card,
   CardContent,
   CircularProgress,
+  ToggleButtonGroup,
+  ToggleButton,
 } from "@mui/material";
 import VideocamIcon from "@mui/icons-material/Videocam";
 import BugReportIcon from "@mui/icons-material/BugReport";
@@ -31,6 +33,7 @@ export default function MarketingHomePage() {
 
   const [plans, setPlans] = useState(null);
   const [plansLoading, setPlansLoading] = useState(true);
+  const [billingInterval, setBillingInterval] = useState("monthly");
 
   useEffect(() => {
     let cancelled = false;
@@ -491,9 +494,48 @@ export default function MarketingHomePage() {
       {/* Pricing — from GET /api/config/plans (config + experiments when logged in) */}
       <Box component="section" sx={sectionSx} id="pricing">
         <Container maxWidth="lg">
-          <Typography component="h2" variant="h4" fontWeight={700} textAlign="center" sx={{ mb: 6 }}>
+          <Typography component="h2" variant="h4" fontWeight={700} textAlign="center" sx={{ mb: 2 }}>
             Simple, transparent pricing
           </Typography>
+          
+          {/* Billing interval toggle */}
+          <Box sx={{ display: "flex", justifyContent: "center", mb: 4 }}>
+            <ToggleButtonGroup
+              value={billingInterval}
+              exclusive
+              onChange={(_, v) => v != null && setBillingInterval(v)}
+              sx={{
+                bgcolor: "background.paper",
+                border: "1px solid",
+                borderColor: "divider",
+                borderRadius: 2,
+                "& .MuiToggleButton-root": {
+                  border: "none",
+                  px: 3,
+                  py: 1,
+                  "&.Mui-selected": {
+                    bgcolor: "primary.main",
+                    color: "#fff",
+                    "&:hover": {
+                      bgcolor: "primary.dark",
+                    },
+                  },
+                },
+              }}
+            >
+              <ToggleButton value="monthly">
+                <Typography variant="body2" fontWeight={600}>
+                  Monthly
+                </Typography>
+              </ToggleButton>
+              <ToggleButton value="annual">
+                <Typography variant="body2" fontWeight={600}>
+                  Annual
+                </Typography>
+              </ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
+
           {plansLoading ? (
             <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
               <CircularProgress />
@@ -504,7 +546,30 @@ export default function MarketingHomePage() {
                 const isPro = plan.tier === "pro";
                 const isEnterprise = plan.tier === "enterprise" || plan.tier === "premium";
                 const highlight = isPro || plan.ui?.badgeText;
-                const priceDisplay = plan.pricing?.annual?.displayPrice ?? plan.pricing?.monthly?.displayPrice ?? null;
+                
+                // Get pricing based on selected interval, default to monthly
+                const selectedPricing = billingInterval === "annual" 
+                  ? plan.pricing?.annual 
+                  : plan.pricing?.monthly;
+                
+                // For display, show monthly price by default, but prioritize annual if available
+                let priceDisplay = null;
+                let priceSubtext = null;
+                
+                if (billingInterval === "annual" && plan.pricing?.annual) {
+                  priceDisplay = plan.pricing.annual.effectiveMonthly || plan.pricing.annual.displayPrice;
+                  priceSubtext = plan.pricing.annual.displayPrice;
+                  if (plan.pricing.annual.savingsText) {
+                    priceSubtext = `${plan.pricing.annual.displayPrice} • ${plan.pricing.annual.savingsText}`;
+                  }
+                } else if (billingInterval === "monthly" && plan.pricing?.monthly) {
+                  priceDisplay = plan.pricing.monthly.displayPrice;
+                  priceSubtext = "Billed monthly";
+                } else {
+                  // Fallback: show annual if available, otherwise monthly
+                  priceDisplay = plan.pricing?.annual?.displayPrice ?? plan.pricing?.monthly?.displayPrice ?? null;
+                }
+                
                 const sessionLabel = plan.limits?.sessionCap != null
                   ? `${plan.limits.sessionCap.toLocaleString()} sessions`
                   : plan.limits?.sessionCap == null && isEnterprise
@@ -548,9 +613,16 @@ export default function MarketingHomePage() {
                         <Typography variant="h6" fontWeight={600} gutterBottom>
                           {plan.displayName || plan.tier}
                         </Typography>
-                        <Typography variant="h4" fontWeight={700} sx={{ my: 1 }}>
-                          {priceDisplay || sessionLabel || plan.displayName}
-                        </Typography>
+                        <Box sx={{ my: 1 }}>
+                          <Typography variant="h4" fontWeight={700}>
+                            {priceDisplay || sessionLabel || plan.displayName}
+                          </Typography>
+                          {priceSubtext && (
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                              {priceSubtext}
+                            </Typography>
+                          )}
+                        </Box>
                         <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
                           {plan.tagline || plan.ui?.description || ""}
                         </Typography>
@@ -571,7 +643,7 @@ export default function MarketingHomePage() {
                         ) : (
                           <Button
                             component={Link}
-                            to={isPro ? "/signup?plan=pro" : "/signup"}
+                            to={isPro ? `/signup?plan=pro&interval=${billingInterval}` : "/signup"}
                             variant={isPro ? "contained" : "outlined"}
                             fullWidth
                             sx={{
@@ -610,7 +682,14 @@ export default function MarketingHomePage() {
                   <Box sx={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: "linear-gradient(90deg, #be95fa, #6366f1)", borderRadius: "8px 8px 0 0" }} />
                   <CardContent sx={{ p: 3, flex: 1, display: "flex", flexDirection: "column", pt: 4 }}>
                     <Typography variant="h6" fontWeight={600} gutterBottom>Pro</Typography>
-                    <Typography variant="h4" fontWeight={700} sx={{ my: 1 }}>5,000 sessions</Typography>
+                    <Box sx={{ my: 1 }}>
+                      <Typography variant="h4" fontWeight={700}>
+                        {billingInterval === "annual" ? "$24.17/mo" : "$29/mo"}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                        {billingInterval === "annual" ? "$290/year • Save $58 (2 months free)" : "Billed monthly"}
+                      </Typography>
+                    </Box>
                     <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>For growing teams</Typography>
                     <Box component="ul" sx={{ m: 0, pl: 2.5, color: "text.secondary", "& li": { display: "flex", alignItems: "center", gap: 1, mb: 1, "& svg": { color: "success.main", flexShrink: 0 } } }}>
                       <li><CheckIcon sx={{ fontSize: 18 }} /> Everything in Free</li>
@@ -619,7 +698,7 @@ export default function MarketingHomePage() {
                       <li><CheckIcon sx={{ fontSize: 18 }} /> Multiple projects</li>
                       <li><CheckIcon sx={{ fontSize: 18 }} /> AI Insights</li>
                     </Box>
-                    <Button component={Link} to="/signup?plan=pro" variant="contained" fullWidth sx={{ mt: "auto", py: 1.5, background: primaryGradient, color: "#fff", "&:hover": { opacity: 0.95, background: primaryGradient } }}>Start Now</Button>
+                    <Button component={Link} to={`/signup?plan=pro&interval=${billingInterval}`} variant="contained" fullWidth sx={{ mt: "auto", py: 1.5, background: primaryGradient, color: "#fff", "&:hover": { opacity: 0.95, background: primaryGradient } }}>Start Now</Button>
                   </CardContent>
                 </Card>
               </Grid>

@@ -497,7 +497,16 @@ export default function InsightsPage() {
                 <Button
                   size="small"
                   variant="outlined"
-                  onClick={() => navigate(`/projects/${projectKey}/sessions`)}
+                  onClick={() =>
+                    navigate(`/projects/${projectKey}/sessions`, {
+                      state: {
+                        insightSessionIds:
+                          Array.isArray(selectedInsight.affectedSessions) && selectedInsight.affectedSessions.length > 0
+                            ? selectedInsight.affectedSessions
+                            : undefined,
+                      },
+                    })
+                  }
                 >
                   View sessions
                 </Button>

@@ -106,6 +106,64 @@ function escapeHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
+const ADMIN_NOTIFY_EMAIL = process.env.ADMIN_NOTIFY_EMAIL || "basil.farraj@gmail.com";
+
+/**
+ * Send admin a notification email (signup, checkout started, payment success/failed).
+ * Fires-and-forgets: logs errors but does not throw, so main flow is never broken.
+ */
+export async function sendAdminNotification(payload) {
+  const { type, email, name, interval, errorMessage } = payload || {};
+  const to = ADMIN_NOTIFY_EMAIL;
+  let subject;
+  let bodyLines;
+  switch (type) {
+    case "signup":
+      subject = "[Quicklook] New signup";
+      bodyLines = ["New user signed up.", `Email: ${email || "—"}`, name ? `Name: ${name}` : null].filter(Boolean);
+      break;
+    case "checkout_started":
+      subject = "[Quicklook] User started checkout";
+      bodyLines = ["A user started payment (redirected to Stripe).", `Email: ${email || "—"}`, name ? `Name: ${name}` : null].filter(Boolean);
+      break;
+    case "payment_success":
+      subject = "[Quicklook] Payment succeeded";
+      bodyLines = [
+        "A user successfully paid and is now Pro.",
+        `Email: ${email || "—"}`,
+        name ? `Name: ${name}` : null,
+        interval ? `Plan: ${interval}` : null,
+      ].filter(Boolean);
+      break;
+    case "payment_failed":
+      subject = "[Quicklook] Payment failed";
+      bodyLines = [
+        "A payment failed (e.g. card declined, insufficient funds).",
+        `Email: ${email || "—"}`,
+        name ? `Name: ${name}` : null,
+        errorMessage ? `Detail: ${errorMessage}` : null,
+      ].filter(Boolean);
+      break;
+    default:
+      logger.warn("sendAdminNotification: unknown type", { type });
+      return;
+  }
+  const text = bodyLines.join("\n");
+  const html = `
+<!DOCTYPE html>
+<html>
+<body style="font-family: sans-serif; line-height: 1.5; color: #333;">
+  <p>${bodyLines.map((line) => escapeHtml(line)).join("</p><p>")}</p>
+  <p>— Quicklook</p>
+</body>
+</html>`;
+  try {
+    await sendEmail({ to, subject, text, html });
+  } catch (err) {
+    logger.warn("Admin notification email failed (non-fatal)", { type, to, error: err.message });
+  }
+}
+
 /** Forgot password: send reset link */
 export async function sendResetPasswordEmail(email, token) {
   const resetUrl = `${FRONTEND_URL}/reset-password?token=${encodeURIComponent(token)}`;

@@ -20,6 +20,8 @@ function getSdkBase() {
   return PRODUCTION_SDK_BASE;
 }
 
+const STORAGE_KEY = "quicklook_website_identity";
+
 export function initQuicklookWebsite() {
   if (typeof window === "undefined") return;
 
@@ -61,8 +63,33 @@ export function initQuicklookWebsite() {
             headMetaSocial: true,        // Remove social meta tags (og:, twitter:)
           },
         });
+        // Apply persisted identity so it's available after refresh (auth restores user after SDK loads)
+        try {
+          const stored = typeof sessionStorage !== "undefined" && sessionStorage.getItem(STORAGE_KEY);
+          if (stored) {
+            const data = JSON.parse(stored);
+            if (data && typeof data === "object" && window.quicklook) {
+              window.quicklook("identify", data);
+            }
+          }
+        } catch (_) {}
       }
     } catch (_) {}
   };
   document.head.appendChild(script);
+}
+
+export function setQuicklookWebsiteIdentity(identity) {
+  if (typeof window === "undefined" || typeof sessionStorage === "undefined") return;
+  if (identity && (identity.email || identity.firstName || identity.lastName)) {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(identity));
+    if (window.quicklook) {
+      window.quicklook("identify", identity);
+    }
+  } else {
+    sessionStorage.removeItem(STORAGE_KEY);
+    if (window.quicklook) {
+      window.quicklook("identify", {});
+    }
+  }
 }

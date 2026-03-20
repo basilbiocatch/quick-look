@@ -3,6 +3,7 @@
 import User from "../models/userModel.js";
 import QuicklookProject from "../models/quicklookProjectModel.js";
 import * as couponService from "../services/couponService.js";
+import { sendAdminNotification } from "../services/emailService.js";
 import logger from "../configs/loggingConfig.js";
 
 const FREE_SESSION_CAP = 1000;
@@ -62,6 +63,18 @@ export async function handleSubscriptionEvents(events) {
           { owner: user._id.toString() },
           { $set: { retentionDays } }
         );
+        if (ev.type === "subscription.created" && isActive) {
+          try {
+            await sendAdminNotification({
+              type: "payment_success",
+              email: user.email,
+              name: user.name,
+              interval: ev.interval,
+            });
+          } catch (err) {
+            logger.warn("Admin payment_success notification failed (non-fatal)", { error: err.message });
+          }
+        }
       } else if (ev.type === "subscription.canceled") {
         const user = await User.findOne({
           $or: [{ "billing.customerId": ev.customerId }, { "billing.subscriptionId": ev.subscriptionId }],
@@ -95,6 +108,29 @@ export async function handleSubscriptionEvents(events) {
               error: err.message,
             });
           }
+        }
+      } else if (ev.type === "invoice.failed") {
+        const user = await User.findOne({
+          $or: [{ "billing.customerId": ev.customerId }, { "billing.subscriptionId": ev.subscriptionId }],
+        })
+          .select("email name")
+          .lean();
+        if (user) {
+          try {
+            await sendAdminNotification({
+              type: "payment_failed",
+              email: user.email,
+              name: user.name,
+              errorMessage: ev.errorMessage,
+            });
+          } catch (err) {
+            logger.warn("Admin payment_failed notification failed (non-fatal)", { error: err.message });
+          }
+        } else {
+          logger.warn("subscriptionEventHandler: no user for invoice.failed", {
+            customerId: ev.customerId,
+            subscriptionId: ev.subscriptionId,
+          });
         }
       }
     } catch (err) {

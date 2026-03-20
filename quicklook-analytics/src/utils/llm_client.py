@@ -10,8 +10,8 @@ logger = logging.getLogger(__name__)
 # Lazy init to avoid import-time failure when key is missing
 _gen_model = None
 
-# Model ID: gemini-1.5-flash is retired in 2025; use a current model. Override with GEMINI_MODEL env.
-_DEFAULT_MODEL = "gemini-2.0-flash"
+# Model ID: gemini-2.0-flash deprecated (shutdown June 2026). Use gemini-1.5-flash-002 (stable) or override with GEMINI_MODEL env.
+_DEFAULT_MODEL = "gemini-1.5-flash-002"
 
 
 def _get_model():

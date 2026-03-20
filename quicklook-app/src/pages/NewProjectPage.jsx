@@ -23,6 +23,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import { createProject } from "../api/quicklookApi";
+import { trackFBCompleteProjctCreated } from "../utils/facebookPixel";
 
 const steps = ["Project details", "Integration"];
 
@@ -72,6 +73,7 @@ export default function NewProjectPage() {
         const data = res.data?.data;
         if (data) {
           setCreatedProject(data);
+          trackFBCompleteProjctCreated({ projectKey: data.projectKey, projectName: data.name });
           setActiveStep(1);
         } else {
           setError(res.data?.error || "Failed to create project");

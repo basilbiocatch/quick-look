@@ -361,7 +361,7 @@ ${setupSnippet}`
                       .map((s) => (
                         <ListItem key={s.sessionId} disablePadding>
                           <ListItemButton
-                            onClick={() => navigate(`/projects/${session.projectKey}/sessions/${s.sessionId}`)}
+                            onClick={() => navigate(`/sessions/${s.sessionId}`)}
                             sx={{ py: 0.25, borderRadius: 1 }}
                           >
                             <ListItemText
@@ -404,7 +404,7 @@ ${setupSnippet}`
                   .map((s) => (
                     <ListItem key={s.sessionId} disablePadding>
                       <ListItemButton
-                        onClick={() => navigate(`/projects/${session.projectKey}/sessions/${s.sessionId}`)}
+                        onClick={() => navigate(`/sessions/${s.sessionId}`)}
                         sx={{ py: 0.25, borderRadius: 1 }}
                       >
                         <ListItemText
@@ -448,7 +448,7 @@ ${setupSnippet}`
                       .map((s) => (
                         <ListItem key={s.sessionId} disablePadding>
                           <ListItemButton
-                            onClick={() => navigate(`/projects/${session.projectKey}/sessions/${s.sessionId}`)}
+                            onClick={() => navigate(`/sessions/${s.sessionId}`)}
                             sx={{ py: 0.25, borderRadius: 1 }}
                           >
                             <ListItemText

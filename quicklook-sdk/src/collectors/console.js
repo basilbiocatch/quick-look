@@ -39,4 +39,17 @@ export function patchConsole(pushEventFn) {
       orig[level].apply(console, args);
     };
   });
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("error", (e) => {
+      const msg = [e.message, e.filename, e.lineno, e.colno].filter((x) => x != null).join(" ");
+      const stack = e.error?.stack ? `\n${e.error.stack}` : "";
+      capture("error", [msg + stack]);
+    });
+    window.addEventListener("unhandledrejection", (e) => {
+      const reason = e.reason;
+      const msg = reason?.message != null ? String(reason.message) : String(reason);
+      capture("error", [`Unhandled rejection: ${msg}`]);
+    });
+  }
 }

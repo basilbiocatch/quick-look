@@ -85,6 +85,8 @@ export default function ReplayPage() {
   const [shareUrl, setShareUrl] = useState("");
   const [shareLoading, setShareLoading] = useState(false);
   const [shareError, setShareError] = useState("");
+  const [playPauseIndicator, setPlayPauseIndicator] = useState(null); // 'play' | 'pause' | null
+  const playPauseIndicatorTimeoutRef = useRef(null);
   const countdownRef = useRef(null);
   const countdownIntervalRef = useRef(null);
   const skipMessageTimeoutRef = useRef(null);
@@ -355,6 +357,15 @@ export default function ReplayPage() {
     } catch (_) {}
   };
 
+  const showPlayPauseFeedback = (newPlaying) => {
+    setPlayPauseIndicator(newPlaying ? "pause" : "play");
+    if (playPauseIndicatorTimeoutRef.current) clearTimeout(playPauseIndicatorTimeoutRef.current);
+    playPauseIndicatorTimeoutRef.current = setTimeout(() => {
+      setPlayPauseIndicator(null);
+      playPauseIndicatorTimeoutRef.current = null;
+    }, 600);
+  };
+
   const handleTogglePlay = () => {
     const wrapper = playerRef?.current;
     if (!wrapper) return;
@@ -364,9 +375,38 @@ export default function ReplayPage() {
       } else {
         if (wrapper.play) wrapper.play();
       }
-      setPlaying((p) => !p);
+      setPlaying((p) => {
+        const next = !p;
+        showPlayPauseFeedback(next);
+        return next;
+      });
     } catch (_) {}
   };
+
+  // Space key toggles play/pause (when not typing in an input)
+  const handleTogglePlayRef = useRef(handleTogglePlay);
+  handleTogglePlayRef.current = handleTogglePlay;
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.code !== "Space" && e.key !== " ") return;
+      const target = e.target;
+      const isInput = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      if (isInput) return;
+      e.preventDefault();
+      handleTogglePlayRef.current();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (playPauseIndicatorTimeoutRef.current) {
+        clearTimeout(playPauseIndicatorTimeoutRef.current);
+        playPauseIndicatorTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   // Sync current time from replayer while playing
   const INACTIVITY_THRESHOLD_MS = 30 * 1000;
@@ -514,6 +554,14 @@ export default function ReplayPage() {
     let playerInstance = null;
     let lastEventCount = 0;
 
+    // rrweb noise: "[replayer] Node with id 'X' not found" and "replayer has been destroyed" (after unmount)
+    const originalWarn = console.warn;
+    console.warn = (...args) => {
+      const msg = args[0] != null ? String(args[0]) : "";
+      if (msg.includes("[replayer]") && (msg.includes("Node with id") && msg.includes("not found") || msg.includes("has been destroyed"))) return;
+      originalWarn.apply(console, args);
+    };
+
     Promise.all([
       import("rrweb-player"),
       import("rrweb-player/dist/style.css"),
@@ -588,6 +636,7 @@ export default function ReplayPage() {
       });
 
     return () => {
+      console.warn = originalWarn;
       mounted = false;
       if (playerInstance && typeof playerInstance.destroy === "function") {
         try {
@@ -676,7 +725,7 @@ export default function ReplayPage() {
   if (error && !session) {
     return (
       <Box p={3}>
-        <Alert severity="error" action={<IconButton onClick={() => navigate("/")}><ArrowBackIcon /></IconButton>}>
+        <Alert severity="error" action={<IconButton onClick={() => (session?.projectKey ? navigate(`/projects/${session.projectKey}/sessions`) : navigate("/"))}><ArrowBackIcon /></IconButton>}>
           {error}
         </Alert>
       </Box>
@@ -700,9 +749,13 @@ export default function ReplayPage() {
           zIndex: 10,
         }}
       >
-        {/* Back Button */}
+        {/* Back Button: go to this project's session list when we have projectKey, else home */}
         <Button
-          onClick={() => navigate("/")}
+          onClick={() =>
+            session?.projectKey
+              ? navigate(`/projects/${session.projectKey}/sessions`)
+              : navigate("/")
+          }
           startIcon={<ArrowBackIcon />}
           sx={{
             textTransform: "none",
@@ -954,18 +1007,59 @@ export default function ReplayPage() {
               minHeight: 300,
             }}
           >
-            <Box
-              ref={containerRef}
-              data-ql-block
-              sx={{
-                position: "relative",
-                display: "flex",
-                alignItems: "flex-start",
-                justifyContent: "center",
-                minWidth: 320,
-                minHeight: 300,
-              }}
-            />
+            <Box sx={{ position: "relative", display: "inline-flex" }}>
+              <Box
+                ref={containerRef}
+                data-ql-block
+                sx={{
+                  position: "relative",
+                  display: "flex",
+                  alignItems: "flex-start",
+                  justifyContent: "center",
+                  minWidth: 320,
+                  minHeight: 300,
+                }}
+              />
+              <Box
+                onClick={handleTogglePlay}
+                sx={{
+                  position: "absolute",
+                  inset: 0,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+                aria-label={playing ? "Pause" : "Play"}
+              >
+                {playPauseIndicator && (
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 72,
+                      height: 72,
+                      borderRadius: "50%",
+                      bgcolor: "rgba(0,0,0,0.55)",
+                      color: "white",
+                      animation: "playPauseFade 0.6s ease-out forwards",
+                      "@keyframes playPauseFade": {
+                        "0%": { opacity: 1, transform: "scale(1)" },
+                        "70%": { opacity: 1, transform: "scale(1)" },
+                        "100%": { opacity: 0, transform: "scale(1.1)" },
+                      },
+                    }}
+                  >
+                    {playPauseIndicator === "play" ? (
+                      <PlayArrowIcon sx={{ fontSize: 40, ml: 0.5 }} />
+                    ) : (
+                      <PauseIcon sx={{ fontSize: 40 }} />
+                    )}
+                  </Box>
+                )}
+              </Box>
+            </Box>
             {eventsLoading && (
               <EventsLoader />
             )}

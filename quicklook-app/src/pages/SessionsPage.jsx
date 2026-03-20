@@ -29,7 +29,7 @@ import {
   useMediaQuery,
   useTheme,
 } from "@mui/material";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { FixedSizeList } from "react-window";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import SearchIcon from "@mui/icons-material/Search";
@@ -62,6 +62,7 @@ import {
 } from "../utils/sessionParser";
 import { format } from "date-fns";
 import SessionSidebar from "../components/SessionSidebar";
+import NoSessionsSdkChecker from "../components/NoSessionsSdkChecker";
 
 /** Text operators for string fields */
 const TEXT_OPERATORS = [
@@ -401,7 +402,7 @@ const SessionRow = React.memo(function SessionRow({
         {visibleColumns.events && (
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: COLUMN_WIDTHS.events, minWidth: COLUMN_WIDTHS.events, flexShrink: 0, mr: COLUMN_GAP }}>
             <FlagIcon sx={{ fontSize: 16, color: "text.secondary" }} />
-            <Typography variant="body2" sx={{ fontSize: "0.875rem" }}>{session.chunkCount ?? 0}</Typography>
+            <Typography variant="body2" sx={{ fontSize: "0.875rem" }}>{session.eventCount ?? 0}</Typography>
           </Box>
         )}
         {visibleColumns.duration && (
@@ -443,11 +444,22 @@ const SessionRow = React.memo(function SessionRow({
 
 export default function SessionsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const { refetch: refetchProjects } = useProjects();
   const { projectKey: routeProjectKey } = useParams();
   const projectKey = routeProjectKey || "";
+  /** When set, only sessions that caused the selected insight are shown (from Insights "View sessions"). */
+  const initialInsightFilterRef = React.useRef(undefined);
+  if (initialInsightFilterRef.current === undefined) {
+    const ids = location.state?.insightSessionIds;
+    initialInsightFilterRef.current =
+      Array.isArray(ids) && ids.length > 0 ? ids : null;
+  }
+  const [insightSessionIdsFilter, setInsightSessionIdsFilter] = useState(
+    () => initialInsightFilterRef.current
+  );
   const thumbnailAttemptedRef = React.useRef(false);
   useEffect(() => {
     if (!routeProjectKey) navigate("/", { replace: true });
@@ -457,7 +469,32 @@ export default function SessionsPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
-  const [status, setStatus] = useState("closed");
+  
+  // Helper functions to map between hash and status
+  const hashToStatus = (hash) => {
+    const hashMap = {
+      "#active": "active",
+      "#all": "",
+      "#completed": "closed",
+    };
+    return hashMap[hash] ?? "closed";
+  };
+  
+  const statusToHash = (statusValue) => {
+    const statusMap = {
+      "active": "#active",
+      "": "#all",
+      "closed": "#completed",
+    };
+    return statusMap[statusValue] ?? "#completed";
+  };
+  
+  // Initialize status from hash, fallback to "closed"
+  const [status, setStatus] = useState(() => {
+    const hash = window.location.hash || location.hash;
+    return hash ? hashToStatus(hash) : "closed";
+  });
+  
   const [total, setTotal] = useState(0);
   /** Whole-dataset stats from API (unique users, avg duration) for the current filter; used for header. */
   const [wholeStats, setWholeStats] = useState(null);
@@ -501,6 +538,31 @@ export default function SessionsPage() {
     thumbnailAttemptedRef.current = false;
   }, [projectKey]);
 
+  // Set initial hash if missing, and update hash when status changes
+  useEffect(() => {
+    const hash = statusToHash(status);
+    const currentHash = window.location.hash;
+    if (currentHash !== hash) {
+      window.history.replaceState(null, "", `${window.location.pathname}${hash}`);
+    }
+  }, [status]);
+
+  // Listen for hash changes (e.g., browser back/forward)
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash;
+      if (hash) {
+        const newStatus = hashToStatus(hash);
+        if (newStatus !== status) {
+          setStatus(newStatus);
+        }
+      }
+    };
+    
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, [status]);
+
   // When sessions are shown and project has no cover image, capture a random session frame and save as project thumbnail
   useEffect(() => {
     if (!projectKey.trim() || sessions.length === 0 || loading || thumbnailAttemptedRef.current) return;
@@ -520,7 +582,8 @@ export default function SessionsPage() {
   }, [projectKey, sessions.length, loading, refetchProjects]);
 
   const applySavedView = (view) => {
-    setStatus(view.status ?? "closed");
+    const viewStatus = view.status ?? "closed";
+    setStatus(viewStatus);
     setDaysFilter(view.daysFilter ?? 30);
     setSearchQuery(view.searchQuery ?? "");
     setActiveFilters(
@@ -586,13 +649,13 @@ export default function SessionsPage() {
     }
     setError("");
     try {
+      const isInsightFilter = Array.isArray(insightSessionIdsFilter) && insightSessionIdsFilter.length > 0;
       const res = await getSessions({
         projectKey: projectKey.trim(),
         status: status || undefined,
-        from: fromTo.from,
-        to: fromTo.to,
-        limit: SESSIONS_PAGE_SIZE,
-        skip: 0,
+        ...(isInsightFilter
+          ? { sessionIds: insightSessionIdsFilter, limit: Math.min(500, insightSessionIdsFilter.length), skip: 0 }
+          : { from: fromTo.from, to: fromTo.to, limit: SESSIONS_PAGE_SIZE, skip: 0 }),
       });
       const data = res.data?.data || [];
       setSessions(data);
@@ -611,10 +674,11 @@ export default function SessionsPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [projectKey, status, fromTo.from, fromTo.to]);
+  }, [projectKey, status, fromTo.from, fromTo.to, insightSessionIdsFilter]);
 
   const loadMore = useCallback(async () => {
     if (!projectKey.trim() || loadingMore || sessions.length >= total) return;
+    if (Array.isArray(insightSessionIdsFilter) && insightSessionIdsFilter.length > 0) return;
     setLoadingMore(true);
     setError("");
     try {
@@ -634,7 +698,7 @@ export default function SessionsPage() {
     } finally {
       setLoadingMore(false);
     }
-  }, [projectKey, status, fromTo.from, fromTo.to, sessions.length, total, loadingMore]);
+  }, [projectKey, status, fromTo.from, fromTo.to, sessions.length, total, loadingMore, insightSessionIdsFilter]);
 
   const handleRefresh = () => {
     load({ isRefresh: true, silent: false });
@@ -870,6 +934,27 @@ export default function SessionsPage() {
             </Alert>
           )}
 
+          {Array.isArray(insightSessionIdsFilter) && insightSessionIdsFilter.length > 0 && (
+            <Alert
+              severity="info"
+              sx={{ mb: 2 }}
+              action={
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={() => {
+                    setInsightSessionIdsFilter(null);
+                    navigate(`/projects/${projectKey}/sessions`, { replace: true, state: {} });
+                  }}
+                >
+                  Show all sessions
+                </Button>
+              }
+            >
+              Showing {sessions.length} session{sessions.length !== 1 ? "s" : ""} for this insight.
+            </Alert>
+          )}
+
           {!projectKey.trim() && (
             <Paper sx={{ p: 3, textAlign: "center" }}>
               <Typography color="text.secondary">Select or add a project to list sessions.</Typography>
@@ -1002,6 +1087,26 @@ export default function SessionsPage() {
                   <Box display="flex" justifyContent="center" alignItems="center" minHeight={320}>
                     <CircularProgress />
                   </Box>
+                ) : filteredSessions.length === 0 ? (
+                  /* Empty state in place of list — centered in list area so it doesn’t sit at the bottom */
+                  <Box
+                    sx={{
+                      minHeight: LIST_HEIGHT,
+                      py: 3,
+                      px: 2,
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 2,
+                    }}
+                  >
+                    {sessions.length === 0 ? (
+                      <NoSessionsSdkChecker projectKey={projectKey} />
+                    ) : (
+                      <Typography color="text.secondary">No sessions match your filters.</Typography>
+                    )}
+                  </Box>
                 ) : (
                   <>
                     {/* Header row — same column widths and padding as rows for alignment */}
@@ -1101,100 +1206,6 @@ export default function SessionsPage() {
                       }}
                     </FixedSizeList>
                   </>
-                )}
-                {!loading && filteredSessions.length === 0 && (
-                  <Box
-                    sx={{
-                      py: 6,
-                      px: 2,
-                      textAlign: "center",
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 2,
-                      "@keyframes pulseRing": {
-                        "0%": { opacity: 0.6, transform: "scale(0.95)" },
-                        "50%": { opacity: 0.2, transform: "scale(1.15)" },
-                        "100%": { opacity: 0.6, transform: "scale(0.95)" },
-                      },
-                      "@keyframes dotWave": {
-                        "0%, 60%, 100%": { opacity: 0.35 },
-                        "30%": { opacity: 1 },
-                      },
-                    }}
-                  >
-                    {sessions.length === 0 ? (
-                      <>
-                        <Box
-                          sx={{
-                            position: "relative",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            width: 72,
-                            height: 72,
-                          }}
-                        >
-                          <Box
-                            sx={{
-                              position: "absolute",
-                              width: 72,
-                              height: 72,
-                              borderRadius: "50%",
-                              bgcolor: "primary.main",
-                              opacity: 0.12,
-                              animation: "pulseRing 2.2s ease-in-out infinite",
-                            }}
-                          />
-                          <Box
-                            sx={{
-                              position: "absolute",
-                              width: 72,
-                              height: 72,
-                              borderRadius: "50%",
-                              bgcolor: "primary.main",
-                              opacity: 0.08,
-                              animation: "pulseRing 2.2s ease-in-out infinite",
-                              animationDelay: "0.55s",
-                            }}
-                          />
-                          <VideocamIcon
-                            sx={{
-                              fontSize: 36,
-                              color: "primary.main",
-                              position: "relative",
-                              zIndex: 1,
-                              animation: "pulseRing 2.2s ease-in-out infinite",
-                            }}
-                          />
-                        </Box>
-                        <Typography variant="body1" color="text.secondary" fontWeight={500}>
-                          Waiting for sessions
-                          <Box
-                            component="span"
-                            sx={{
-                              "& > span": {
-                                animation: "dotWave 1.4s ease-in-out infinite",
-                                "&:nth-of-type(1)": { animationDelay: "0s" },
-                                "&:nth-of-type(2)": { animationDelay: "0.2s" },
-                                "&:nth-of-type(3)": { animationDelay: "0.4s" },
-                              },
-                            }}
-                          >
-                            <span>.</span>
-                            <span>.</span>
-                            <span>.</span>
-                          </Box>
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 280 }}>
-                          Add the integration script to your site. New recordings will appear here.
-                        </Typography>
-                      </>
-                    ) : (
-                      <Typography color="text.secondary">No sessions match your filters.</Typography>
-                    )}
-                  </Box>
                 )}
                 {/* Pagination: show count and Load more when there are more sessions than loaded */}
                 {!loading && total > 0 && (

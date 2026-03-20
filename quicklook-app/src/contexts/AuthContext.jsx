@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { getAuthToken, setAuthToken, getMe, login as apiLogin, register as apiRegister, resendVerificationEmail as apiResendVerification } from "../api/authApi.js";
+import { setQuicklookWebsiteIdentity } from "../quicklookWebsite.js";
 
 const AuthContext = createContext(null);
 
@@ -64,6 +65,19 @@ export function AuthProvider({ children }) {
     window.addEventListener("quicklook-unauthorized", handleUnauthorized);
     return () => window.removeEventListener("quicklook-unauthorized", handleUnauthorized);
   }, []);
+
+  // Keep QuickLook website SDK identity in sync (and in sessionStorage so it survives refresh)
+  useEffect(() => {
+    if (!user) {
+      setQuicklookWebsiteIdentity(null);
+    } else {
+      const firstName = user.name?.trim().split(/\s+/)[0] || undefined;
+      setQuicklookWebsiteIdentity({
+        email: user.email || undefined,
+        firstName: firstName || undefined,
+      });
+    }
+  }, [user]);
 
   const login = useCallback(async (credentials) => {
     try {

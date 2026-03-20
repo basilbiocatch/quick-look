@@ -54,7 +54,17 @@ export function startRecording() {
 
 export function stopRecording() {
   if (stopFn && typeof stopFn === "function") {
-    stopFn();
+    try {
+      stopFn();
+    } catch (e) {
+      // rrweb cleanup can throw SecurityError when removing listeners in cross-origin iframes
+      // or when the document is in a restricted state (e.g. during visibilitychange).
+      if (e?.name === "SecurityError" || (e?.message && String(e.message).toLowerCase().includes("security"))) {
+        // Recording is effectively stopped; swallow so visibility/inactivity flow doesn't break
+      } else {
+        throw e;
+      }
+    }
     stopFn = null;
   }
 }

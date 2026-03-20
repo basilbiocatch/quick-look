@@ -12,5 +12,5 @@ QUICKLOOK_DB = os.getenv("QUICKLOOK_DB", "").strip()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "").strip()
 GCS_BUCKET = os.getenv("GCS_BUCKET", "").strip().lower()
-# Optional: override Gemini model (default gemini-2.0-flash; if 404 try gemini-2.5-flash or gemini-1.5-flash-latest)
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "").strip() or "gemini-2.0-flash"
+# Optional: override Gemini model (default gemini-1.5-flash-002; gemini-2.0-flash deprecated June 2026)
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "").strip()

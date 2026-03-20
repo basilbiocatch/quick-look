@@ -18,6 +18,7 @@ from src.processors.pattern_library import (
 )
 from src.processors.retrain import run_retrain
 from src.reports.report_generator import generate_report
+from src.processors.issues_aggregator import run_issues_aggregation, run_issues_debug
 from src.processors.session_processor import (
     ensure_root_cause_for_session,
     ensure_summary_for_session,
@@ -122,6 +123,55 @@ async def list_clusters(request: Request) -> dict[str, Any]:
         if hasattr(c.get("createdAt"), "isoformat"):
             c["createdAt"] = c["createdAt"].isoformat()
     return {"success": True, "clusters": clusters}
+
+
+@app.post("/insights/run")
+async def insights_run(request: Request, response: Response) -> dict[str, Any]:
+    """
+    Run insight generation for all projects (or one if projectKey set).
+    Same 6h schedule as /process and /issues/run. Query params: projectKey (optional), limit=500, period_days=7.
+    """
+    project_key = request.query_params.get("projectKey", "").strip() or None
+    try:
+        limit_val = request.query_params.get("limit", "500")
+        limit = min(1000, max(1, int(limit_val)))
+    except ValueError:
+        limit = 500
+    try:
+        period_val = request.query_params.get("period_days", "7")
+        period_days = min(90, max(1, int(period_val)))
+    except ValueError:
+        period_days = 7
+    db = get_database()
+    sessions_coll = db["quicklook_sessions"]
+    if project_key:
+        project_keys = [project_key]
+    else:
+        project_keys = await sessions_coll.distinct(
+            "projectKey",
+            {"status": "closed", "closedAt": {"$exists": True, "$ne": None}},
+        )
+        project_keys = list(project_keys) if project_keys else []
+    projects_ok = 0
+    projects_failed = 0
+    for pk in project_keys:
+        try:
+            await run_insight_generation_for_project(
+                get_database,
+                pk,
+                limit_sessions=limit,
+                period_days=period_days,
+            )
+            projects_ok += 1
+        except Exception as e:
+            logger.exception("insights/run failed for project %s: %s", pk[:8] if pk else "", e)
+            projects_failed += 1
+    return {
+        "success": True,
+        "projectsProcessed": projects_ok,
+        "projectsFailed": projects_failed,
+        "message": f"Insight generation run for {projects_ok} project(s). Failed: {projects_failed}.",
+    }
 
 
 @app.post("/insights/generate")
@@ -239,6 +289,59 @@ async def patterns_sync(request: Request, response: Response) -> dict[str, Any]:
         logger.exception("POST /patterns/sync failed: %s", e)
         response.status_code = 500
         return {"success": False, "error": str(e)}
+
+
+@app.get("/issues/debug")
+async def issues_debug(request: Request, response: Response) -> dict[str, Any]:
+    """
+    Debug why a project gets no issues. Query param: projectKey (required).
+    Returns window, closed session count, and first session's event/console counts.
+    """
+    project_key = request.query_params.get("projectKey", "").strip()
+    if not project_key:
+        response.status_code = 400
+        return {"success": False, "error": "projectKey is required"}
+    try:
+        result = await run_issues_debug(get_database, project_key)
+        return {"success": True, **result}
+    except Exception as e:
+        logger.exception("GET /issues/debug failed: %s", e)
+        response.status_code = 500
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/issues/run")
+async def issues_run(request: Request, response: Response) -> dict[str, Any]:
+    """
+    Run issues aggregation: extract JS errors/warnings from session events,
+    upsert quicklook_issues and quicklook_issue_occurrences.
+    Query params: projectKey (optional) to run for one project only; otherwise all projects.
+    Suggested schedule: every 6 hours (e.g. 0 */6 * * *).
+    """
+    project_key = request.query_params.get("projectKey", "").strip() or None
+    logger.info("POST /issues/run received projectKey=%s", project_key or "(all)")
+    try:
+        result = await run_issues_aggregation(get_database, project_key=project_key)
+        msg = (
+            f"Processed {result['sessionsProcessed']} session(s), "
+            f"created {result['issuesCreated']} issue(s), "
+            f"inserted {result['occurrencesInserted']} occurrence(s)."
+        )
+        if result["sessionsProcessed"] == 0:
+            msg += " No closed sessions in window or none had console errors/warnings."
+        return {"success": True, "message": msg, **result}
+    except Exception as e:
+        logger.exception("POST /issues/run failed: %s", e)
+        response.status_code = 500
+        return {
+            "success": False,
+            "error": str(e),
+            "message": f"Run failed: {e}",
+            "projectsProcessed": 0,
+            "sessionsProcessed": 0,
+            "issuesCreated": 0,
+            "occurrencesInserted": 0,
+        }
 
 
 @app.post("/reports/generate")
@@ -429,3 +532,98 @@ async def process(request: Request, response: Response) -> dict[str, Any]:
         logger.exception("_run_batch failed: %s", e)
         response.status_code = 500
         return {"success": False, "error": str(e)}
+
+
+@app.post("/")
+async def root_process(request: Request, response: Response) -> dict[str, Any]:
+    """
+    Pub/Sub push endpoint (root). Same behavior as POST /process so the default
+    analytics-subscription push URL (service root) works without changing subscription.
+    """
+    return await process(request, response)
+
+
+@app.post("/schedule")
+async def schedule(request: Request, response: Response) -> dict[str, Any]:
+    """
+    Dispatcher for scheduled jobs that run per-project or once: cluster, patterns_sync,
+    reports, retrain. Invoked by Pub/Sub push from topic quicklook-analytics-schedule.
+    Message body (JSON, or message.data base64): {"task":"cluster"|"patterns_sync"|"reports"|"retrain", "type":"daily"|"weekly"|"monthly"}.
+    For "reports", "type" is required. Lists project keys from closed sessions and runs the task per project (except retrain = once for all).
+    """
+    body = await request.body()
+    payload = _decode_pubsub_body(body)
+    message = payload.get("message") or {}
+    data_str = None
+    if message.get("data"):
+        try:
+            data_str = base64.b64decode(message["data"]).decode("utf-8")
+        except Exception as e:
+            logger.warning("Could not decode schedule message.data: %s", e)
+    if not data_str:
+        data_str = body.decode("utf-8") if isinstance(body, bytes) else ""
+    try:
+        data = json.loads(data_str) if data_str.strip() else {}
+    except json.JSONDecodeError:
+        data = {}
+    task = (data.get("task") or "").strip().lower()
+    report_type = (data.get("type") or "weekly").strip().lower()
+    if report_type not in ("daily", "weekly", "monthly"):
+        report_type = "weekly"
+
+    if not task:
+        logger.info("POST /schedule ignored: no task in body")
+        return {"success": True, "message": "No task in body", "task": None}
+
+    db = get_database()
+    sessions_coll = db[SESSION_COLLECTION]
+    project_keys = await sessions_coll.distinct(
+        "projectKey",
+        {"status": "closed", "closedAt": {"$exists": True, "$ne": None}},
+    )
+    project_keys = [k for k in project_keys if k]
+
+    if task == "retrain":
+        try:
+            result = await run_retrain(get_database, project_key=None)
+            return {"success": True, "task": "retrain", **result}
+        except Exception as e:
+            logger.exception("POST /schedule retrain failed: %s", e)
+            response.status_code = 500
+            return {"success": False, "task": "retrain", "error": str(e)}
+
+    if task == "cluster":
+        ok, failed = 0, 0
+        for pk in project_keys:
+            try:
+                await run_clustering_for_project(get_database, pk, limit=500, method="dbscan", use_llm_labels=False)
+                ok += 1
+            except Exception as e:
+                logger.exception("schedule cluster failed for %s: %s", pk[:8], e)
+                failed += 1
+        return {"success": True, "task": "cluster", "projectsOk": ok, "projectsFailed": failed}
+
+    if task == "patterns_sync":
+        ok, failed = 0, 0
+        for pk in project_keys:
+            try:
+                await sync_patterns_from_insights(get_database, pk, limit_insights=200)
+                ok += 1
+            except Exception as e:
+                logger.exception("schedule patterns_sync failed for %s: %s", pk[:8], e)
+                failed += 1
+        return {"success": True, "task": "patterns_sync", "projectsOk": ok, "projectsFailed": failed}
+
+    if task == "reports":
+        ok, failed = 0, 0
+        for pk in project_keys:
+            try:
+                await generate_report(get_database, pk, report_type=report_type, use_llm=True)
+                ok += 1
+            except Exception as e:
+                logger.exception("schedule reports failed for %s: %s", pk[:8], e)
+                failed += 1
+        return {"success": True, "task": "reports", "type": report_type, "projectsOk": ok, "projectsFailed": failed}
+
+    logger.info("POST /schedule ignored: unknown task=%s", task)
+    return {"success": True, "message": f"Unknown task {task}", "task": task}
