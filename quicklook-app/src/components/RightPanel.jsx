@@ -52,6 +52,7 @@ import { format } from "date-fns";
 import PropertyRow from "./PropertyRow";
 import ErrorDisplay from "./ErrorDisplay";
 import { getSessions } from "../api/quicklookApi";
+import SessionTrackedEventsPanel from "./events/SessionTrackedEventsPanel";
 
 function getApiBase() {
   const base = import.meta.env.VITE_API_BASE_URL;
@@ -160,6 +161,8 @@ export default function RightPanel({
   onGenerateSummary,
   relatedSessionsByIp = [],
   relatedSessionsByDevice = [],
+  trackedSessionEvents = [],
+  trackedSessionEventsLoading = false,
   isMobile = false,
 }) {
   const navigate = useNavigate();
@@ -324,6 +327,10 @@ ${setupSnippet}`
         >
           Show all sessions
         </Typography>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Product events" defaultOpen={!isMobile} compact={isMobile}>
+        <SessionTrackedEventsPanel events={trackedSessionEvents} loading={trackedSessionEventsLoading} />
       </CollapsibleSection>
 
       <CollapsibleSection

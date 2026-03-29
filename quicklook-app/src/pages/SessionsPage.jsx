@@ -63,6 +63,7 @@ import {
 import { format } from "date-fns";
 import SessionSidebar from "../components/SessionSidebar";
 import NoSessionsSdkChecker from "../components/NoSessionsSdkChecker";
+import ActiveSessionsEmptyState from "../components/ActiveSessionsEmptyState";
 
 /** Text operators for string fields */
 const TEXT_OPERATORS = [
@@ -1102,7 +1103,13 @@ export default function SessionsPage() {
                     }}
                   >
                     {sessions.length === 0 ? (
-                      <NoSessionsSdkChecker projectKey={projectKey} />
+                      status === "active" ? (
+                        <ActiveSessionsEmptyState projectKey={projectKey} />
+                      ) : status === "" ? (
+                        <NoSessionsSdkChecker projectKey={projectKey} />
+                      ) : (
+                        <Typography color="text.secondary">No completed sessions in this period.</Typography>
+                      )
                     ) : (
                       <Typography color="text.secondary">No sessions match your filters.</Typography>
                     )}

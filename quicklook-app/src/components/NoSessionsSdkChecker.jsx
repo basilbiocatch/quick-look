@@ -67,7 +67,7 @@ export default function NoSessionsSdkChecker({ projectKey }) {
   };
 
   const goToSdkDocs = () => {
-    navigate("/sdk-docs");
+    navigate("/docs/sdk");
   };
 
   return (

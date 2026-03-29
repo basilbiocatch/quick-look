@@ -192,7 +192,18 @@ export default function SdkDocsPage() {
 });`}</CodeBlock>
         </Section>
 
-        <Section title="6. Commands reference">
+        <Section title="6. Product events (track)">
+          <Typography variant="body2" paragraph sx={{ lineHeight: 1.7 }}>
+            Use <code>track</code> to record named analytics events (feature usage, milestones). This is separate from the DOM replay: it only sends lightweight event names and optional properties. In the dashboard, open your project and use the sidebar <strong>Events</strong> page to filter by time range, event name prefix, and sort by volume or name. Each replay also lists product events in the right panel under <strong>Product events</strong>.
+          </Typography>
+          <Typography variant="body2" paragraph sx={{ lineHeight: 1.7 }}>
+            <strong>Naming:</strong> stable lowercase names with underscores, e.g. <code>checkout_started</code>, <code>export_clicked</code>. <strong>Properties:</strong> optional plain object for dimensions (no secrets or raw PII). Server limits apply (name length, JSON size, key count).
+          </Typography>
+          <CodeBlock>{`window.quicklook("track", "feature_used", { featureId: "saved_views" });
+window.quicklook("track", "checkout_started");`}</CodeBlock>
+        </Section>
+
+        <Section title="7. Commands reference">
           <List dense disablePadding>
             <ListItem sx={{ py: 0.25 }}>
               <ListItemText
@@ -203,6 +214,12 @@ export default function SdkDocsPage() {
             <ListItem sx={{ py: 0.25 }}>
               <ListItemText
                 primary={<><code>{"identify({ firstName?, lastName?, email?, ...custom })"}</code> — Set user identity.</>}
+                primaryTypographyProps={{ variant: "body2" }}
+              />
+            </ListItem>
+            <ListItem sx={{ py: 0.25 }}>
+              <ListItemText
+                primary={<><code>{"track(name, properties?)"}</code> — Product analytics event for the current session.</>}
                 primaryTypographyProps={{ variant: "body2" }}
               />
             </ListItem>
@@ -230,7 +247,7 @@ export default function SdkDocsPage() {
           </Typography>
         </Section>
 
-        <Section title="7. View sessions in the dashboard">
+        <Section title="8. View sessions in the dashboard">
           <Typography variant="body2" paragraph>
             Once the SDK is sending data for your project key:
           </Typography>
@@ -239,7 +256,7 @@ export default function SdkDocsPage() {
               <ListItemText primary="Open the dashboard and select your project." primaryTypographyProps={{ variant: "body2" }} />
             </ListItem>
             <ListItem sx={{ py: 0.25, display: "list-item" }}>
-              <ListItemText primary="Go to Sessions to see the list of recordings (filter by date, status, etc.)." primaryTypographyProps={{ variant: "body2" }} />
+              <ListItemText primary="Go to Sessions to see the list of recordings (filter by date, status, etc.). Open Events to see aggregated product events from track()." primaryTypographyProps={{ variant: "body2" }} />
             </ListItem>
             <ListItem sx={{ py: 0.25, display: "list-item" }}>
               <ListItemText primary="Click a session to watch the replay (playback of DOM, clicks, scrolls, and navigation)." primaryTypographyProps={{ variant: "body2" }} />
@@ -250,7 +267,7 @@ export default function SdkDocsPage() {
           </List>
         </Section>
 
-        <Section title="8. Self‑hosted / local development (optional)">
+        <Section title="9. Self‑hosted / local development (optional)">
           <Typography variant="body2" paragraph>
             Only if you run your own QuickLook server (e.g. on-prem or local dev): set <code>apiUrl</code> to that server’s URL. For production websites, use the default QuickLook API (<code>https://quicklook.io</code>) and do not set <code>apiUrl</code> to localhost.
           </Typography>
@@ -259,7 +276,7 @@ export default function SdkDocsPage() {
           </Typography>
         </Section>
 
-        <Section title="9. Full page example">
+        <Section title="10. Full page example">
           <CodeBlock>{`<!DOCTYPE html>
 <html>
 <head>

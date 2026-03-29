@@ -16,6 +16,19 @@ Include the script and worker on your page (e.g. from your own host or CDN):
 ```javascript
 window.quicklook("init", "YOUR_PROJECT_KEY");
 window.quicklook("identify", { firstName: "Jane", email: "jane@example.com" });
+window.quicklook("track", "checkout_started", { plan: "pro" });
+```
+
+### Product events (`track`)
+
+Send named analytics events to measure feature usage (aggregated in the QuickLook **Events** dashboard for your project). Call after `init` when a session exists.
+
+- **Naming:** Use stable, lowercase names with underscores, e.g. `export_clicked`, `onboarding_step_completed`, `category.action`.
+- **Properties:** Optional plain object for dimensions (e.g. `{ feature: "reports", variant: "A" }`). Do **not** send secrets, passwords, or raw PII. The server rejects oversized payloads (see API limits).
+- **Limits:** Event name max length 128 characters; properties JSON max ~8 KB and a bounded number of keys.
+
+```javascript
+window.quicklook("track", "feature_used", { featureId: "saved_views" });
 ```
 
 ### Init options
@@ -49,6 +62,7 @@ window.quicklook("init", "YOUR_PROJECT_KEY", {
 
 - `init(projectKey, options?)` — Start recording; required first.
 - `identify({ firstName?, lastName?, email?, ...custom })` — Set user identity.
+- `track(name, properties?)` — Record a product analytics event for the current session.
 - `getIdentity()` — Return the current identity object (for debugging).
 - `stop()` — Stop recording and flush.
 - `getSessionId(callback?)` — Return or callback with current session ID.

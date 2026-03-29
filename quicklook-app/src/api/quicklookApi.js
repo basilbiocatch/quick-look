@@ -118,6 +118,19 @@ export const getIssuesDaily = (projectKey, params) =>
 export const getIssueDetail = (projectKey, issueId, params) =>
   api.get(`/issues/${issueId}`, { params: { projectKey, ...params } });
 
+/** Product analytics: aggregated event counts. Params: from, to (ISO), name (prefix), sort, limit */
+export const getTrackedEventsSummary = (projectKey, params) =>
+  api.get(`/projects/${encodeURIComponent(projectKey)}/events/summary`, { params });
+/** Charts: totals, daily series, stacked top names. Params: from, to (ISO), name (prefix) */
+export const getTrackedEventsAnalytics = (projectKey, params) =>
+  api.get(`/projects/${encodeURIComponent(projectKey)}/events/analytics`, { params });
+/** Distinct event names in range for filters. Params: from, to (ISO) */
+export const getTrackedEventNames = (projectKey, params) =>
+  api.get(`/projects/${encodeURIComponent(projectKey)}/event-names`, { params });
+/** Per-session tracked events for replay sidebar */
+export const getSessionTrackedEvents = (sessionId) =>
+  api.get(`/sessions/${encodeURIComponent(sessionId)}/tracked-events`);
+
 export const getProjects = () => api.get("/projects");
 export const createProject = (body) => api.post("/projects", body);
 export const getProject = (projectKey) => api.get(`/projects/${projectKey}`);

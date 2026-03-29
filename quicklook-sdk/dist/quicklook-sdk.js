@@ -17656,6 +17656,26 @@ ${e.error.stack}` : "";
       }
     }
   }
+  function track(name, properties) {
+    const sid = getSessionId();
+    const apiUrl2 = getApiUrl();
+    if (!sid || !apiUrl2) return;
+    if (typeof name !== "string" || !name.trim()) return;
+    const body = { name: name.trim(), timestamp: Date.now() };
+    if (properties !== void 0 && properties !== null) {
+      if (typeof properties !== "object" || Array.isArray(properties)) return;
+      body.properties = properties;
+    }
+    const payload = JSON.stringify(body);
+    const url = `${apiUrl2}/api/quicklook/sessions/${encodeURIComponent(sid)}/track`;
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+      keepalive: true
+    }).catch(() => {
+    });
+  }
   function stop() {
     stopActivityMonitoring();
     if (stopRecord) stopRecord();
@@ -17671,6 +17691,7 @@ ${e.error.stack}` : "";
     const api2 = {
       init,
       identify,
+      track,
       getIdentity,
       stop,
       getSessionId: getSessionIdPublic

@@ -209,6 +209,31 @@ function identify(data) {
   }
 }
 
+/**
+ * Record a product analytics event for the current session (feature usage, milestones).
+ * @param {string} name — stable event name, e.g. checkout_started or export_clicked
+ * @param {Record<string, unknown>} [properties] — optional dimensions (no PII or secrets); server caps size
+ */
+function track(name, properties) {
+  const sid = getSessionId();
+  const apiUrl = getApiUrl();
+  if (!sid || !apiUrl) return;
+  if (typeof name !== "string" || !name.trim()) return;
+  const body = { name: name.trim(), timestamp: Date.now() };
+  if (properties !== undefined && properties !== null) {
+    if (typeof properties !== "object" || Array.isArray(properties)) return;
+    body.properties = properties;
+  }
+  const payload = JSON.stringify(body);
+  const url = `${apiUrl}/api/quicklook/sessions/${encodeURIComponent(sid)}/track`;
+  fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: payload,
+    keepalive: true,
+  }).catch(() => {});
+}
+
 function stop() {
   stopActivityMonitoring();
   if (stopRecord) stopRecord();
@@ -226,6 +251,7 @@ export function createQuicklook() {
   const api = {
     init,
     identify,
+    track,
     getIdentity,
     stop,
     getSessionId: getSessionIdPublic,

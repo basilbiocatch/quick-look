@@ -34,7 +34,7 @@ import SkipNextIcon from "@mui/icons-material/SkipNext";
 import CloseIcon from "@mui/icons-material/Close";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { getSession, getEvents, getSessions, getProject, updateProject, getEnsureSummary, createShare, revokeShare } from "../api/quicklookApi";
+import { getSession, getEvents, getSessions, getProject, updateProject, getEnsureSummary, createShare, revokeShare, getSessionTrackedEvents } from "../api/quicklookApi";
 import { getEventsDurationMs, getPagesFromEvents, getEventMarksFromEvents, getEventMarksWithTypes, urlPageKey } from "../utils/activityList";
 import RightPanel from "../components/RightPanel";
 import PlayerControls from "../components/PlayerControls";
@@ -85,6 +85,8 @@ export default function ReplayPage() {
   const [shareUrl, setShareUrl] = useState("");
   const [shareLoading, setShareLoading] = useState(false);
   const [shareError, setShareError] = useState("");
+  const [trackedSessionEvents, setTrackedSessionEvents] = useState([]);
+  const [trackedSessionEventsLoading, setTrackedSessionEventsLoading] = useState(false);
   const [playPauseIndicator, setPlayPauseIndicator] = useState(null); // 'play' | 'pause' | null
   const playPauseIndicatorTimeoutRef = useRef(null);
   const countdownRef = useRef(null);
@@ -186,6 +188,26 @@ export default function ReplayPage() {
     })();
     return () => { cancelled = true; };
   }, [sessionId, eventsRetryKey]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    let cancelled = false;
+    setTrackedSessionEvents([]);
+    setTrackedSessionEventsLoading(true);
+    getSessionTrackedEvents(sessionId)
+      .then((res) => {
+        if (!cancelled) setTrackedSessionEvents(res.data?.data ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setTrackedSessionEvents([]);
+      })
+      .finally(() => {
+        if (!cancelled) setTrackedSessionEventsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
 
   const buildShareUrl = (token) => {
     if (typeof window === "undefined" || !token) return "";
@@ -1310,6 +1332,8 @@ export default function ReplayPage() {
             onGenerateSummary={handleGenerateSummary}
             relatedSessionsByIp={relatedSessionsByIp}
             relatedSessionsByDevice={relatedSessionsByDevice}
+            trackedSessionEvents={trackedSessionEvents}
+            trackedSessionEventsLoading={trackedSessionEventsLoading}
             isMobile={isMobile}
           />
         </Box>

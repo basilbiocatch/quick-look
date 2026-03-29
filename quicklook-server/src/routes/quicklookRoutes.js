@@ -8,6 +8,7 @@ import * as reportsController from "../controllers/reportsController.js";
 import * as abTestController from "../controllers/abTestController.js";
 import * as accuracyController from "../controllers/accuracyController.js";
 import * as issuesController from "../controllers/issuesController.js";
+import * as trackedEventsController from "../controllers/trackedEventsController.js";
 import { requireAuth, requireEmailVerified } from "../middleware/jwtAuth.js";
 import { requirePlan } from "../middleware/requirePlan.js";
 import { validateOrigin } from "../middleware/validateOrigin.js";
@@ -40,6 +41,7 @@ router.post("/sessions/start", validateOrigin, quicklookController.startSession)
 router.post("/sessions/:sessionId/chunk", validateOrigin, quicklookController.saveChunk);
 router.post("/sessions/:sessionId/end", validateOrigin, quicklookController.endSession);
 router.post("/sessions/:sessionId/identify", validateOrigin, quicklookController.updateSessionIdentify);
+router.post("/sessions/:sessionId/track", validateOrigin, trackedEventsController.postTrack);
 
 /** Public: view shared recording by token (no auth) */
 router.get("/public/share/:shareToken", quicklookController.getPublicShare);
@@ -47,6 +49,9 @@ router.get("/public/share/:shareToken", quicklookController.getPublicShare);
 router.use(requireAuth, requireEmailVerified);
 
 router.post("/projects", quicklookController.createProject);
+router.get("/projects/:projectKey/events/summary", trackedEventsController.getEventsSummary);
+router.get("/projects/:projectKey/events/analytics", trackedEventsController.getEventsAnalytics);
+router.get("/projects/:projectKey/event-names", trackedEventsController.getEventNames);
 router.get("/projects/:projectKey", quicklookController.getProject);
 router.patch("/projects/:projectKey", quicklookController.updateProject);
 router.delete("/projects/:projectKey", quicklookController.deleteProject);
@@ -54,6 +59,7 @@ router.delete("/projects/:projectKey", quicklookController.deleteProject);
 router.get("/sessions", quicklookController.getSessions);
 router.get("/sessions/:sessionId", quicklookController.getSession);
 router.get("/sessions/:sessionId/events", quicklookController.getEvents);
+router.get("/sessions/:sessionId/tracked-events", trackedEventsController.getSessionTrackedEvents);
 router.get("/sessions/:sessionId/chunks", quicklookController.getSessionChunks);
 router.get("/sessions/:sessionId/ensure-summary", requirePlan(["pro"]), quicklookController.ensureSummary);
 router.get("/sessions/:sessionId/ensure-root-cause", requirePlan(["pro"]), quicklookController.ensureRootCause);

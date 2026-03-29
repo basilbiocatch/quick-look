@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import zlib from "zlib";
 import QuicklookSession from "../models/quicklookSessionModel.js";
 import QuicklookProject from "../models/quicklookProjectModel.js";
+import QuicklookTrackedEvent from "../models/quicklookTrackedEventModel.js";
 import User from "../models/userModel.js";
 import logger from "../configs/loggingConfig.js";
 import { ChunkStorage } from "../storage/chunkStorage.js";
@@ -559,6 +560,7 @@ export const QuicklookService = {
     let deleted = 0;
     for (const s of expired) {
       await chunkStorage.deleteChunks(s.sessionId);
+      await QuicklookTrackedEvent.deleteMany({ sessionId: s.sessionId });
       await QuicklookSession.deleteOne({ sessionId: s.sessionId });
       deleted++;
     }
@@ -573,6 +575,7 @@ export const QuicklookService = {
       await chunkStorage.deleteChunks(sessionId);
       chunksDeleted++;
     }
+    await QuicklookTrackedEvent.deleteMany({ projectKey });
     const sessionsDeleted = await QuicklookSession.deleteMany({ projectKey });
     const projectDeleted = await QuicklookProject.deleteOne({ projectKey });
     logger.info("quicklook project deleted", {
