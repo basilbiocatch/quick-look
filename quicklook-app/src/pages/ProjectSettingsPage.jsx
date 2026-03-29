@@ -23,6 +23,11 @@ import {
   DialogContent,
   DialogContentText,
   DialogActions,
+  Chip,
+  MenuItem,
+  Select,
+  FormControl,
+  InputLabel,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import AddIcon from "@mui/icons-material/Add";
@@ -36,7 +41,19 @@ import FormControlLabel from "@mui/material/FormControlLabel";
 import SettingsIcon from "@mui/icons-material/Settings";
 import CodeIcon from "@mui/icons-material/Code";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
-import { getProject, updateProject, deleteProject } from "../api/quicklookApi";
+import GroupIcon from "@mui/icons-material/Group";
+import { useAuth } from "../contexts/AuthContext";
+import { useProjects } from "../contexts/ProjectsContext";
+import {
+  getProject,
+  updateProject,
+  deleteProject,
+  inviteProjectMember,
+  getProjectMembers,
+  updateProjectMemberRole,
+  removeProjectMember,
+  revokeProjectInvitation,
+} from "../api/quicklookApi";
 
 function getApiBase() {
   const base = import.meta.env.VITE_API_BASE_URL;
@@ -48,6 +65,8 @@ function getApiBase() {
 export default function ProjectSettingsPage() {
   const { projectKey } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { refetch: refetchProjects } = useProjects();
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -63,6 +82,40 @@ export default function ProjectSettingsPage() {
   const [deviceIdEnabled, setDeviceIdEnabled] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [team, setTeam] = useState(null);
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [teamError, setTeamError] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("viewer");
+  const [inviteBusy, setInviteBusy] = useState(false);
+
+  const isOwner = project?.role === "owner";
+  const isPro = user?.plan === "pro";
+  const canEditSettings = isOwner;
+
+  useEffect(() => {
+    if (!isOwner && tabIndex === 3) setTabIndex(0);
+  }, [isOwner, tabIndex]);
+
+  useEffect(() => {
+    if (tabIndex !== 3 || !isOwner || !isPro || !projectKey) return;
+    let cancelled = false;
+    setTeamLoading(true);
+    setTeamError("");
+    getProjectMembers(projectKey)
+      .then((res) => {
+        if (!cancelled && res.data?.data) setTeam(res.data.data);
+      })
+      .catch((err) => {
+        if (!cancelled) setTeamError(err.response?.data?.error || err.message || "Failed to load team");
+      })
+      .finally(() => {
+        if (!cancelled) setTeamLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tabIndex, isOwner, isPro, projectKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -111,6 +164,7 @@ export default function ProjectSettingsPage() {
   };
 
   const handleSave = () => {
+    if (!canEditSettings) return;
     setSaving(true);
     setError("");
     const payload = {
@@ -173,6 +227,58 @@ ${integrationSnippet}`
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
+  };
+
+  const reloadTeam = () => {
+    if (!projectKey || !isOwner || !isPro) return;
+    setTeamLoading(true);
+    setTeamError("");
+    getProjectMembers(projectKey)
+      .then((res) => {
+        if (res.data?.data) setTeam(res.data.data);
+      })
+      .catch((err) => {
+        setTeamError(err.response?.data?.error || err.message || "Failed to load team");
+      })
+      .finally(() => setTeamLoading(false));
+  };
+
+  const handleSendInvite = () => {
+    const em = inviteEmail.trim().toLowerCase();
+    if (!em) return;
+    setInviteBusy(true);
+    setTeamError("");
+    inviteProjectMember(projectKey, { email: em, role: inviteRole })
+      .then(() => {
+        setInviteEmail("");
+        reloadTeam();
+        refetchProjects();
+      })
+      .catch((err) => {
+        setTeamError(err.response?.data?.error || err.message || "Invite failed");
+      })
+      .finally(() => setInviteBusy(false));
+  };
+
+  const handleRemoveMember = (memberUserId) => {
+    removeProjectMember(projectKey, memberUserId)
+      .then(() => {
+        reloadTeam();
+        refetchProjects();
+      })
+      .catch((err) => setTeamError(err.response?.data?.error || err.message || "Remove failed"));
+  };
+
+  const handleChangeMemberRole = (memberUserId, role) => {
+    updateProjectMemberRole(projectKey, memberUserId, { role })
+      .then(() => reloadTeam())
+      .catch((err) => setTeamError(err.response?.data?.error || err.message || "Update failed"));
+  };
+
+  const handleRevokeInvite = (invitationId) => {
+    revokeProjectInvitation(projectKey, invitationId)
+      .then(() => reloadTeam())
+      .catch((err) => setTeamError(err.response?.data?.error || err.message || "Revoke failed"));
   };
 
   const handleDeleteProject = () => {
@@ -270,17 +376,26 @@ ${integrationSnippet}`
           <Tab icon={<SettingsIcon sx={{ fontSize: 18 }} />} iconPosition="start" label="Project settings" id="project-settings-tab" />
           <Tab icon={<CodeIcon sx={{ fontSize: 18 }} />} iconPosition="start" label="Integration" id="integration-tab" />
           <Tab icon={<BlockIcon sx={{ fontSize: 18 }} />} iconPosition="start" label="Page exclusions" id="page-exclusions-tab" />
+          {isOwner ? (
+            <Tab icon={<GroupIcon sx={{ fontSize: 18 }} />} iconPosition="start" label="Team" id="team-tab" />
+          ) : null}
         </Tabs>
 
         <Box sx={{ p: 3 }}>
           {tabIndex === 0 && (
             <>
+              {!canEditSettings && (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  You can view settings but only the project owner can change them.
+                </Alert>
+              )}
               <TextField
                 fullWidth
                 label="Project name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="My app"
+                disabled={!canEditSettings}
                 sx={{ mb: 2 }}
               />
               <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5 }}>
@@ -300,8 +415,16 @@ ${integrationSnippet}`
                   value={newDomain}
                   onChange={(e) => setNewDomain(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddDomain())}
+                  disabled={!canEditSettings}
                 />
-                <Button variant="outlined" startIcon={<AddIcon />} onClick={handleAddDomain} disabled={!newDomain.trim()} sx={{ flexShrink: 0 }} aria-label="Add domain">
+                <Button
+                  variant="outlined"
+                  startIcon={<AddIcon />}
+                  onClick={handleAddDomain}
+                  disabled={!canEditSettings || !newDomain.trim()}
+                  sx={{ flexShrink: 0 }}
+                  aria-label="Add domain"
+                >
                   Add
                 </Button>
               </Box>
@@ -311,7 +434,12 @@ ${integrationSnippet}`
                     <ListItem key={`${domain}-${index}`}>
                       <ListItemText primary={domain} primaryTypographyProps={{ variant: "body2", fontFamily: "monospace" }} />
                       <ListItemSecondaryAction>
-                        <IconButton size="small" onClick={() => handleRemoveDomain(index)} aria-label="Remove domain">
+                        <IconButton
+                          size="small"
+                          onClick={() => handleRemoveDomain(index)}
+                          aria-label="Remove domain"
+                          disabled={!canEditSettings}
+                        >
                           <DeleteOutlineIcon fontSize="small" />
                         </IconButton>
                       </ListItemSecondaryAction>
@@ -338,6 +466,7 @@ ${integrationSnippet}`
                     checked={deviceIdEnabled}
                     onChange={(e) => setDeviceIdEnabled(e.target.checked)}
                     color="primary"
+                    disabled={!canEditSettings}
                   />
                 }
                 label={deviceIdEnabled ? "Device ID enabled — sessions correlated by device" : "Device ID disabled"}
@@ -420,6 +549,11 @@ ${integrationSnippet}`
 
           {tabIndex === 2 && (
             <>
+              {!canEditSettings && (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  Only the project owner can change page exclusions.
+                </Alert>
+              )}
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 URL path or substring. When the page URL contains one of these, the SDK will not record (e.g. <code>/privacy</code>, <code>/admin</code>).
               </Typography>
@@ -431,8 +565,15 @@ ${integrationSnippet}`
                   value={newPattern}
                   onChange={(e) => setNewPattern(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddExcluded())}
+                  disabled={!canEditSettings}
                 />
-                <Button variant="outlined" startIcon={<AddIcon />} onClick={handleAddExcluded} disabled={!newPattern.trim()} sx={{ flexShrink: 0 }}>
+                <Button
+                  variant="outlined"
+                  startIcon={<AddIcon />}
+                  onClick={handleAddExcluded}
+                  disabled={!canEditSettings || !newPattern.trim()}
+                  sx={{ flexShrink: 0 }}
+                >
                   Add
                 </Button>
               </Box>
@@ -442,7 +583,12 @@ ${integrationSnippet}`
                     <ListItem key={`${pattern}-${index}`}>
                       <ListItemText primary={pattern} primaryTypographyProps={{ variant: "body2", fontFamily: "monospace" }} />
                       <ListItemSecondaryAction>
-                        <IconButton size="small" onClick={() => handleRemoveExcluded(index)} aria-label="Remove">
+                        <IconButton
+                          size="small"
+                          onClick={() => handleRemoveExcluded(index)}
+                          aria-label="Remove"
+                          disabled={!canEditSettings}
+                        >
                           <DeleteOutlineIcon fontSize="small" />
                         </IconButton>
                       </ListItemSecondaryAction>
@@ -457,7 +603,132 @@ ${integrationSnippet}`
             </>
           )}
 
-          {(tabIndex === 0 || tabIndex === 2) && (
+          {tabIndex === 3 && isOwner && (
+            <>
+              {!isPro ? (
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                  Team invitations are a <strong>Pro</strong> feature.{" "}
+                  <Link component="button" variant="body2" onClick={() => navigate("/account/upgrade")}>
+                    Upgrade to invite teammates
+                  </Link>
+                  .
+                </Alert>
+              ) : (
+                <>
+                  {teamError && (
+                    <Alert severity="error" sx={{ mb: 2 }} onClose={() => setTeamError("")}>
+                      {teamError}
+                    </Alert>
+                  )}
+                  <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
+                    Invite by email
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    Invited users can view this project. Editors can also manage sessions (e.g. share links). Only you can change project settings or billing.
+                  </Typography>
+                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, alignItems: "flex-start", mb: 3 }}>
+                    <TextField
+                      size="small"
+                      label="Email"
+                      type="email"
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                      sx={{ minWidth: 220, flex: 1 }}
+                    />
+                    <FormControl size="small" sx={{ minWidth: 120 }}>
+                      <InputLabel id="invite-role-label">Role</InputLabel>
+                      <Select
+                        labelId="invite-role-label"
+                        label="Role"
+                        value={inviteRole}
+                        onChange={(e) => setInviteRole(e.target.value)}
+                      >
+                        <MenuItem value="viewer">Viewer</MenuItem>
+                        <MenuItem value="editor">Editor</MenuItem>
+                      </Select>
+                    </FormControl>
+                    <Button variant="contained" onClick={handleSendInvite} disabled={inviteBusy || !inviteEmail.trim()}>
+                      {inviteBusy ? "Sending…" : "Send invite"}
+                    </Button>
+                  </Box>
+
+                  {teamLoading ? (
+                    <Box sx={{ display: "flex", justifyContent: "center", py: 3 }}>
+                      <CircularProgress size={32} />
+                    </Box>
+                  ) : team ? (
+                    <>
+                      <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
+                        Owner
+                      </Typography>
+                      <Typography variant="body2" sx={{ mb: 2 }}>
+                        {team.owner?.email}
+                        {team.owner?.name ? ` (${team.owner.name})` : ""}
+                      </Typography>
+
+                      <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
+                        Members
+                      </Typography>
+                      {team.members?.length ? (
+                        <List dense sx={{ bgcolor: "action.hover", borderRadius: 1, mb: 2 }}>
+                          {team.members.map((m) => (
+                            <ListItem key={m.userId}>
+                              <ListItemText primary={m.email || m.userId} secondary={m.name || undefined} />
+                              <Box sx={{ display: "flex", alignItems: "center", gap: 1, mr: 1 }}>
+                                <FormControl size="small" sx={{ minWidth: 100 }}>
+                                  <Select
+                                    value={m.role}
+                                    onChange={(e) => handleChangeMemberRole(m.userId, e.target.value)}
+                                  >
+                                    <MenuItem value="viewer">Viewer</MenuItem>
+                                    <MenuItem value="editor">Editor</MenuItem>
+                                  </Select>
+                                </FormControl>
+                                <IconButton size="small" aria-label="Remove member" onClick={() => handleRemoveMember(m.userId)}>
+                                  <DeleteOutlineIcon fontSize="small" />
+                                </IconButton>
+                              </Box>
+                            </ListItem>
+                          ))}
+                        </List>
+                      ) : (
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                          No members yet.
+                        </Typography>
+                      )}
+
+                      <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
+                        Pending invitations
+                      </Typography>
+                      {team.pendingInvitations?.length ? (
+                        <List dense>
+                          {team.pendingInvitations.map((inv) => (
+                            <ListItem key={inv.invitationId}>
+                              <ListItemText
+                                primary={inv.email}
+                                secondary={`${inv.role} · sent ${inv.createdAt ? new Date(inv.createdAt).toLocaleString() : ""}`}
+                              />
+                              <ListItemSecondaryAction>
+                                <Button size="small" color="inherit" onClick={() => handleRevokeInvite(inv.invitationId)}>
+                                  Revoke
+                                </Button>
+                              </ListItemSecondaryAction>
+                            </ListItem>
+                          ))}
+                        </List>
+                      ) : (
+                        <Typography variant="body2" color="text.secondary">
+                          No pending invitations.
+                        </Typography>
+                      )}
+                    </>
+                  ) : null}
+                </>
+              )}
+            </>
+          )}
+
+          {(tabIndex === 0 || tabIndex === 2) && canEditSettings && (
             <Button variant="contained" onClick={handleSave} disabled={saving || !hasChanges} sx={{ mt: 3 }}>
               {saving ? "Saving…" : "Save changes"}
             </Button>
@@ -465,33 +736,35 @@ ${integrationSnippet}`
         </Box>
       </Paper>
 
-      <Paper
-        elevation={0}
-        sx={{
-          p: 3,
-          border: "1px solid",
-          borderColor: "error.main",
-          borderRadius: 2,
-          maxWidth: 600,
-          mt: 3,
-        }}
-      >
-        <Typography variant="h6" fontWeight={600} color="error.main" sx={{ mb: 1 }}>
-          Danger zone
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Once you delete a project, there is no going back. This will permanently delete the project and all associated sessions and recordings.
-        </Typography>
-        <Button
-          variant="outlined"
-          color="error"
-          startIcon={<DeleteOutlineIcon />}
-          onClick={() => setDeleteDialogOpen(true)}
-          disabled={deleting}
+      {isOwner && (
+        <Paper
+          elevation={0}
+          sx={{
+            p: 3,
+            border: "1px solid",
+            borderColor: "error.main",
+            borderRadius: 2,
+            maxWidth: 600,
+            mt: 3,
+          }}
         >
-          Delete project
-        </Button>
-      </Paper>
+          <Typography variant="h6" fontWeight={600} color="error.main" sx={{ mb: 1 }}>
+            Danger zone
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Once you delete a project, there is no going back. This will permanently delete the project and all associated sessions and recordings.
+          </Typography>
+          <Button
+            variant="outlined"
+            color="error"
+            startIcon={<DeleteOutlineIcon />}
+            onClick={() => setDeleteDialogOpen(true)}
+            disabled={deleting}
+          >
+            Delete project
+          </Button>
+        </Paper>
+      )}
 
       <Dialog
         open={deleteDialogOpen}

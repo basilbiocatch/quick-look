@@ -24,6 +24,7 @@ import {
   sendAdminNotification,
 } from "../services/emailService.js";
 import { assignUserToExperimentFromVisitorId } from "../services/planConfigService.js";
+import { acceptProjectInvitation } from "../services/projectInvitationAcceptService.js";
 
 const SALT_ROUNDS = 10;
 const JWT_EXPIRY = "7d";
@@ -45,7 +46,7 @@ function toUserPayload(user) {
 
 export async function register(req, res) {
   try {
-    const { email, password, name, visitorId } = req.body || {};
+    const { email, password, name, visitorId, inviteToken } = req.body || {};
     const trimmedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
     if (!trimmedEmail) {
       return res.status(400).json({ success: false, error: "Email is required" });
@@ -88,10 +89,22 @@ export async function register(req, res) {
       logger.warn("Admin signup notification failed (non-fatal)", { error: e.message });
     }
     const token = jwt.sign({ userId: user._id.toString() }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
+
+    let inviteAcceptedProjectKey = null;
+    if (inviteToken && typeof inviteToken === "string" && inviteToken.trim()) {
+      try {
+        const acc = await acceptProjectInvitation(inviteToken.trim(), user._id.toString(), trimmedEmail);
+        if (acc.ok) inviteAcceptedProjectKey = acc.projectKey;
+      } catch (e) {
+        logger.warn("invite accept on register failed (non-fatal)", { error: e.message });
+      }
+    }
+
     return res.status(201).json({
       success: true,
       token,
       user: toUserPayload(user),
+      ...(inviteAcceptedProjectKey ? { inviteAcceptedProjectKey } : {}),
     });
   } catch (err) {
     logger.error("auth register", { error: err.message });

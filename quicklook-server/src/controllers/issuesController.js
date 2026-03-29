@@ -3,24 +3,8 @@
 import Issue from "../models/issueModel.js";
 import IssueOccurrence from "../models/issueOccurrenceModel.js";
 import QuicklookSession from "../models/quicklookSessionModel.js";
-import QuicklookProject from "../models/quicklookProjectModel.js";
 import logger from "../configs/loggingConfig.js";
-
-/** Ensure user owns the project; if not, send 404/403 and return null. */
-async function getProjectForUser(projectKey, userId, res) {
-  const project = await QuicklookProject.findOne({ projectKey }).lean();
-  if (!project) {
-    res.status(404).json({ success: false, error: "Project not found" });
-    return null;
-  }
-  const ownerStr = project.owner != null ? String(project.owner) : "";
-  const userIdStr = userId != null ? String(userId) : "";
-  if (ownerStr !== userIdStr) {
-    res.status(403).json({ success: false, error: "You don't have access to this project." });
-    return null;
-  }
-  return project;
-}
+import { getProjectForUser } from "../utils/projectAccess.js";
 
 /**
  * GET /issues?projectKey=...&type=...&severity=...&segment=...&from=...&to=...&limit=...
@@ -32,8 +16,8 @@ export const getIssues = async (req, res) => {
     if (!projectKey) {
       return res.status(400).json({ success: false, error: "projectKey is required" });
     }
-    const project = await getProjectForUser(projectKey, req.user.userId, res);
-    if (!project) return;
+    const access = await getProjectForUser(projectKey, req.user.userId, res);
+    if (!access) return;
 
     const filter = { projectKey };
     if (type && ["javascript_error", "javascript_warning", "network_error"].includes(type)) {
@@ -80,8 +64,8 @@ export const getIssueById = async (req, res) => {
     if (!projectKey) {
       return res.status(400).json({ success: false, error: "projectKey is required" });
     }
-    const project = await getProjectForUser(projectKey, req.user.userId, res);
-    if (!project) return;
+    const access = await getProjectForUser(projectKey, req.user.userId, res);
+    if (!access) return;
 
     const issue = await Issue.findOne({ issueId, projectKey }).lean();
     if (!issue) {
@@ -165,8 +149,8 @@ export const getIssuesDaily = async (req, res) => {
     if (!projectKey) {
       return res.status(400).json({ success: false, error: "projectKey is required" });
     }
-    const project = await getProjectForUser(projectKey, req.user.userId, res);
-    if (!project) return;
+    const access = await getProjectForUser(projectKey, req.user.userId, res);
+    if (!access) return;
 
     const daysNum = Math.min(90, Math.max(1, parseInt(days, 10) || 30));
     const toDate = new Date();

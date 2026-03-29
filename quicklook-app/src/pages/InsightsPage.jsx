@@ -28,6 +28,7 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import ScienceIcon from "@mui/icons-material/Science";
 import { useAuth } from "../contexts/AuthContext";
+import { useProjectRole } from "../contexts/ProjectsContext";
 import ProFeatureGate from "../components/ProFeatureGate";
 import { getInsights, patchInsight, postInsightsGenerate, createAbTest } from "../api/quicklookApi";
 
@@ -49,6 +50,8 @@ export default function InsightsPage() {
   const { projectKey } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { role: projectRole } = useProjectRole(projectKey);
+  const canEditInsights = projectRole !== "viewer";
   const [insights, setInsights] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -218,14 +221,16 @@ export default function InsightsPage() {
               ))}
             </Select>
           </FormControl>
-          <Button
-            variant="outlined"
-            startIcon={generating ? <CircularProgress size={16} /> : <AutoAwesomeIcon />}
-            onClick={handleGenerate}
-            disabled={generating}
-          >
-            {generating ? "Generating…" : "Generate insights"}
-          </Button>
+          {canEditInsights && (
+            <Button
+              variant="outlined"
+              startIcon={generating ? <CircularProgress size={16} /> : <AutoAwesomeIcon />}
+              onClick={handleGenerate}
+              disabled={generating}
+            >
+              {generating ? "Generating…" : "Generate insights"}
+            </Button>
+          )}
           <Button variant="outlined" startIcon={<RefreshIcon />} onClick={fetchInsights} disabled={loading}>
             Refresh
           </Button>
@@ -482,7 +487,7 @@ export default function InsightsPage() {
                 value={selectedInsight.accuracyRating ?? 0}
                 max={5}
                 size="small"
-                disabled={patching}
+                disabled={patching || !canEditInsights}
                 onChange={(_, v) => handleRateAccuracy(selectedInsight.insightId, v)}
               />
               {selectedInsight.resolvedAt && (
@@ -514,6 +519,7 @@ export default function InsightsPage() {
                   size="small"
                   variant="outlined"
                   onClick={() => setCreateAbDialogOpen(true)}
+                  disabled={!canEditInsights}
                 >
                   Track as A/B test
                 </Button>
@@ -522,14 +528,14 @@ export default function InsightsPage() {
                     <Button
                       size="small"
                       color="primary"
-                      disabled={patching}
+                      disabled={patching || !canEditInsights}
                       onClick={handleMarkResolvedClick}
                     >
                       Mark resolved
                     </Button>
                     <Button
                       size="small"
-                      disabled={patching}
+                      disabled={patching || !canEditInsights}
                       onClick={() => handlePatchStatus(selectedInsight.insightId, "ignored")}
                     >
                       Ignore
@@ -546,7 +552,7 @@ export default function InsightsPage() {
                 </DialogContent>
                 <DialogActions>
                   <Button onClick={() => setCreateAbDialogOpen(false)}>Cancel</Button>
-                  <Button variant="contained" onClick={handleCreateAbTest} disabled={creatingAb}>
+                  <Button variant="contained" onClick={handleCreateAbTest} disabled={creatingAb || !canEditInsights}>
                     {creatingAb ? "Creating…" : "Create"}
                   </Button>
                 </DialogActions>

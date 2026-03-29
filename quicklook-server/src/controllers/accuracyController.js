@@ -2,21 +2,8 @@
 
 import QuicklookInsight from "../models/quicklookInsightModel.js";
 import QuicklookAbTest from "../models/quicklookAbTestModel.js";
-import QuicklookProject from "../models/quicklookProjectModel.js";
 import logger from "../configs/loggingConfig.js";
-
-async function getProjectForUser(projectKey, userId, res) {
-  const project = await QuicklookProject.findOne({ projectKey }).lean();
-  if (!project) {
-    res.status(404).json({ success: false, error: "Project not found" });
-    return null;
-  }
-  if (project.owner !== userId) {
-    res.status(403).json({ success: false, error: "Forbidden" });
-    return null;
-  }
-  return project;
-}
+import { getProjectForUser, canEditSessions } from "../utils/projectAccess.js";
 
 /**
  * GET /accuracy-metrics?projectKey=...
@@ -29,8 +16,8 @@ export const getAccuracyMetrics = async (req, res) => {
     if (!projectKey) {
       return res.status(400).json({ success: false, error: "projectKey is required" });
     }
-    const project = await getProjectForUser(projectKey, req.user.userId, res);
-    if (!project) return;
+    const access = await getProjectForUser(projectKey, req.user.userId, res);
+    if (!access) return;
 
     const [insights, abTests] = await Promise.all([
       QuicklookInsight.find({ projectKey }).lean(),
@@ -105,6 +92,13 @@ export const getAccuracyMetrics = async (req, res) => {
 export const postModelsRetrain = async (req, res) => {
   try {
     const projectKey = (req.body?.projectKey ?? req.query?.projectKey ?? "").toString().trim() || undefined;
+    if (projectKey) {
+      const access = await getProjectForUser(projectKey, req.user.userId, res);
+      if (!access) return;
+      if (!canEditSessions(access.role)) {
+        return res.status(403).json({ success: false, error: "Viewers cannot trigger model retrain.", code: "FORBIDDEN_VIEWER" });
+      }
+    }
     const base = process.env.QUICKLOOK_ANALYTICS_URL || process.env.ANALYTICS_BASE_URL || "";
     if (!base) {
       return res.status(501).json({

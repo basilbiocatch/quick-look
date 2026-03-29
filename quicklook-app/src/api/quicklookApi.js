@@ -136,3 +136,20 @@ export const createProject = (body) => api.post("/projects", body);
 export const getProject = (projectKey) => api.get(`/projects/${projectKey}`);
 export const updateProject = (projectKey, data) => api.patch(`/projects/${projectKey}`, data);
 export const deleteProject = (projectKey) => api.delete(`/projects/${projectKey}`);
+
+/** Pro: invite by email (owner only). Body: { email, role: "viewer" | "editor" } */
+export const inviteProjectMember = (projectKey, body) =>
+  api.post(`/projects/${encodeURIComponent(projectKey)}/members/invite`, body);
+/** Pro: list owner, members, pending invitations */
+export const getProjectMembers = (projectKey) =>
+  api.get(`/projects/${encodeURIComponent(projectKey)}/members`);
+export const updateProjectMemberRole = (projectKey, memberUserId, body) =>
+  api.patch(`/projects/${encodeURIComponent(projectKey)}/members/${encodeURIComponent(memberUserId)}`, body);
+export const removeProjectMember = (projectKey, memberUserId) =>
+  api.delete(`/projects/${encodeURIComponent(projectKey)}/members/${encodeURIComponent(memberUserId)}`);
+export const revokeProjectInvitation = (projectKey, invitationId) =>
+  api.delete(`/projects/${encodeURIComponent(projectKey)}/invitations/${encodeURIComponent(invitationId)}`);
+export const acceptProjectInvitation = (token) =>
+  api.post(`/invitations/${encodeURIComponent(token)}/accept`);
+export const declineProjectInvitation = (token) =>
+  api.post(`/invitations/${encodeURIComponent(token)}/decline`);

@@ -25,6 +25,7 @@ import ScienceIcon from "@mui/icons-material/Science";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import { useAuth } from "../contexts/AuthContext";
+import { useProjectRole } from "../contexts/ProjectsContext";
 import ProFeatureGate from "../components/ProFeatureGate";
 import { getAbTests, patchAbTest } from "../api/quicklookApi";
 
@@ -39,6 +40,8 @@ export default function AbTestsPage() {
   const { projectKey } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { role: projectRole } = useProjectRole(projectKey);
+  const canEditAbTests = projectRole !== "viewer";
   const [tests, setTests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -254,7 +257,7 @@ export default function AbTestsPage() {
                           e.stopPropagation();
                           handleStatusChange(test.testId, "running");
                         }}
-                        disabled={patching}
+                        disabled={patching || !canEditAbTests}
                       >
                         Start test
                       </Button>
@@ -267,7 +270,7 @@ export default function AbTestsPage() {
                           e.stopPropagation();
                           openResultsDialog(test);
                         }}
-                        disabled={patching}
+                        disabled={patching || !canEditAbTests}
                       >
                         Record results
                       </Button>
@@ -339,7 +342,7 @@ export default function AbTestsPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setResultsDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={submitResults} disabled={patching}>
+          <Button variant="contained" onClick={submitResults} disabled={patching || !canEditAbTests}>
             Save & complete
           </Button>
         </DialogActions>

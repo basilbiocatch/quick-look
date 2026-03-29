@@ -9,6 +9,7 @@ import * as abTestController from "../controllers/abTestController.js";
 import * as accuracyController from "../controllers/accuracyController.js";
 import * as issuesController from "../controllers/issuesController.js";
 import * as trackedEventsController from "../controllers/trackedEventsController.js";
+import * as membersController from "../controllers/membersController.js";
 import { requireAuth, requireEmailVerified } from "../middleware/jwtAuth.js";
 import { requirePlan } from "../middleware/requirePlan.js";
 import { validateOrigin } from "../middleware/validateOrigin.js";
@@ -46,6 +47,10 @@ router.post("/sessions/:sessionId/track", validateOrigin, trackedEventsControlle
 /** Public: view shared recording by token (no auth) */
 router.get("/public/share/:shareToken", quicklookController.getPublicShare);
 
+/** Accept/decline project invite without requiring verified email (new signups). */
+router.post("/invitations/:token/accept", requireAuth, membersController.acceptInvitation);
+router.post("/invitations/:token/decline", requireAuth, membersController.declineInvitation);
+
 router.use(requireAuth, requireEmailVerified);
 
 router.post("/projects", quicklookController.createProject);
@@ -55,6 +60,28 @@ router.get("/projects/:projectKey/event-names", trackedEventsController.getEvent
 router.get("/projects/:projectKey", quicklookController.getProject);
 router.patch("/projects/:projectKey", quicklookController.updateProject);
 router.delete("/projects/:projectKey", quicklookController.deleteProject);
+
+router.post(
+  "/projects/:projectKey/members/invite",
+  requirePlan(["pro"]),
+  membersController.inviteMember
+);
+router.get("/projects/:projectKey/members", requirePlan(["pro"]), membersController.listMembers);
+router.patch(
+  "/projects/:projectKey/members/:memberUserId",
+  requirePlan(["pro"]),
+  membersController.updateMemberRole
+);
+router.delete(
+  "/projects/:projectKey/members/:memberUserId",
+  requirePlan(["pro"]),
+  membersController.removeMember
+);
+router.delete(
+  "/projects/:projectKey/invitations/:invitationId",
+  requirePlan(["pro"]),
+  membersController.revokeInvitation
+);
 
 router.get("/sessions", quicklookController.getSessions);
 router.get("/sessions/:sessionId", quicklookController.getSession);

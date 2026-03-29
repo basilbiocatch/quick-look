@@ -26,9 +26,12 @@ export default function SignupPage() {
   const [searchParams] = useSearchParams();
   const planPro = searchParams.get("plan") === "pro";
   const coupon = searchParams.get("coupon") || "";
+  const inviteToken = searchParams.get("invite") || "";
 
   if (user) {
-    if (planPro) {
+    if (inviteToken.trim()) {
+      navigate(`/invitations/${encodeURIComponent(inviteToken.trim())}`, { replace: true });
+    } else if (planPro) {
       const params = new URLSearchParams({ from: "pricing" });
       if (coupon) params.set("coupon", coupon);
       navigate(`/account/upgrade?${params.toString()}`, { replace: true });
@@ -52,10 +55,13 @@ export default function SignupPage() {
       password,
       name: name.trim() || undefined,
       visitorId: deviceId || undefined,
+      inviteToken: inviteToken.trim() || undefined,
     });
     setSubmitting(false);
     if (result.success) {
-      if (planPro) {
+      if (result.inviteAcceptedProjectKey && !planPro) {
+        navigate(`/projects/${result.inviteAcceptedProjectKey}/sessions`, { replace: true });
+      } else if (planPro) {
         const params = new URLSearchParams({ from: "pricing" });
         if (coupon) params.set("coupon", coupon);
         navigate(`/account/upgrade?${params.toString()}`, { replace: true });
@@ -152,7 +158,12 @@ export default function SignupPage() {
           </Button>
           <Typography variant="body2" color="text.secondary" textAlign="center">
             Already have an account?{" "}
-            <MuiLink component={Link} to="/login" color="primary" underline="hover">
+            <MuiLink
+              component={Link}
+              to={inviteToken ? `/login?invite=${encodeURIComponent(inviteToken)}` : "/login"}
+              color="primary"
+              underline="hover"
+            >
               Sign in
             </MuiLink>
           </Typography>

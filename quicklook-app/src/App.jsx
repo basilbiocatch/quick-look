@@ -24,6 +24,7 @@ import NewProjectPage from "./pages/NewProjectPage";
 import ProjectSettingsPage from "./pages/ProjectSettingsPage";
 import SdkDocsPage from "./pages/SdkDocsPage";
 import PublicReplayPage from "./pages/PublicReplayPage";
+import AcceptInvitationPage from "./pages/AcceptInvitationPage";
 import BlogPage from "./pages/BlogPage";
 import BlogArticlePage from "./pages/BlogArticlePage";
 import PlanManagerPage from "./pages/admin/PlanManagerPage";
@@ -212,6 +213,7 @@ function App() {
         <Route path="/blog/:slug" element={<BlogArticlePage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
+        <Route path="/invitations/:token" element={<AcceptInvitationPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />

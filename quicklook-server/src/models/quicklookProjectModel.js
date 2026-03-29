@@ -10,6 +10,17 @@ const projectSchema = new mongoose.Schema(
     projectKey: { type: String, required: true, unique: true, index: true },
     name: { type: String, required: true },
     owner: { type: String, required: true, index: true },
+    /** Collaborators (Pro). Owner is not duplicated here. */
+    members: {
+      type: [
+        {
+          userId: { type: String, required: true },
+          role: { type: String, enum: ["viewer", "editor"], required: true },
+          addedAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
+    },
     apiKey: { type: String, index: true },
     retentionDays: { type: Number, default: 30 },
     allowedDomains: { type: [String], default: [] },
@@ -39,6 +50,8 @@ const projectSchema = new mongoose.Schema(
   },
   { collection: "quicklook_projects", versionKey: false }
 );
+
+projectSchema.index({ "members.userId": 1 });
 
 function generateId() {
   return crypto.randomBytes(12).toString("hex");

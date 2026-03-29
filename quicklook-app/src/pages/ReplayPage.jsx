@@ -34,6 +34,7 @@ import SkipNextIcon from "@mui/icons-material/SkipNext";
 import CloseIcon from "@mui/icons-material/Close";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { useProjectRole } from "../contexts/ProjectsContext";
 import { getSession, getEvents, getSessions, getProject, updateProject, getEnsureSummary, createShare, revokeShare, getSessionTrackedEvents } from "../api/quicklookApi";
 import { getEventsDurationMs, getPagesFromEvents, getEventMarksFromEvents, getEventMarksWithTypes, urlPageKey } from "../utils/activityList";
 import RightPanel from "../components/RightPanel";
@@ -89,6 +90,9 @@ export default function ReplayPage() {
   const [trackedSessionEventsLoading, setTrackedSessionEventsLoading] = useState(false);
   const [playPauseIndicator, setPlayPauseIndicator] = useState(null); // 'play' | 'pause' | null
   const playPauseIndicatorTimeoutRef = useRef(null);
+  const { role: projectRole } = useProjectRole(session?.projectKey);
+  /** Hide share only when we know the user is a viewer (null role while loading still allows try). */
+  const canShareRecording = Boolean(session?.projectKey) && projectRole !== "viewer";
   const countdownRef = useRef(null);
   const countdownIntervalRef = useRef(null);
   const skipMessageTimeoutRef = useRef(null);
@@ -852,23 +856,25 @@ export default function ReplayPage() {
         
         <Box sx={{ flex: 1 }} />
 
-        <Tooltip title={session?.shareToken ? "Copy share link" : "Share recording publicly"}>
-          <Button
-            onClick={handleOpenShareDialog}
-            startIcon={<ShareIcon />}
-            sx={{
-              textTransform: "none",
-              color: "primary.main",
-              bgcolor: "rgba(0, 0, 0, 0.04)",
-              borderRadius: 2,
-              px: 1.5,
-              py: 0.75,
-              "&:hover": { bgcolor: "rgba(0, 0, 0, 0.08)" },
-            }}
-          >
-            Share
-          </Button>
-        </Tooltip>
+        {canShareRecording && (
+          <Tooltip title={session?.shareToken ? "Copy share link" : "Share recording publicly"}>
+            <Button
+              onClick={handleOpenShareDialog}
+              startIcon={<ShareIcon />}
+              sx={{
+                textTransform: "none",
+                color: "primary.main",
+                bgcolor: "rgba(0, 0, 0, 0.04)",
+                borderRadius: 2,
+                px: 1.5,
+                py: 0.75,
+                "&:hover": { bgcolor: "rgba(0, 0, 0, 0.08)" },
+              }}
+            >
+              Share
+            </Button>
+          </Tooltip>
+        )}
         
         <Box
           component="button"

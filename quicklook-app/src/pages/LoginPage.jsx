@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import { Link, useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import {
   Box,
   Paper,
@@ -23,7 +23,11 @@ export default function LoginPage() {
   const { login, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const from = location.state?.from?.pathname || "/";
+  const [searchParams] = useSearchParams();
+  const invite = searchParams.get("invite") || "";
+  const from = invite
+    ? `/invitations/${encodeURIComponent(invite)}`
+    : location.state?.from?.pathname || "/";
 
   if (user) {
     navigate(from, { replace: true });
@@ -129,7 +133,12 @@ export default function LoginPage() {
           </Typography>
           <Typography variant="body2" color="text.secondary" textAlign="center">
             Don&apos;t have an account?{" "}
-            <MuiLink component={Link} to="/signup" color="primary" underline="hover">
+            <MuiLink
+              component={Link}
+              to={invite ? `/signup?invite=${encodeURIComponent(invite)}` : "/signup"}
+              color="primary"
+              underline="hover"
+            >
               Sign up
             </MuiLink>
           </Typography>

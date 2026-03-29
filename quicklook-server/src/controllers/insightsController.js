@@ -1,23 +1,9 @@
 "use strict";
 
 import QuicklookInsight from "../models/quicklookInsightModel.js";
-import QuicklookProject from "../models/quicklookProjectModel.js";
 import { hasReachedSessionCap } from "../services/quicklookService.js";
 import logger from "../configs/loggingConfig.js";
-
-/** Ensure user owns the project; if not, send 404/403 and return null. */
-async function getProjectForUser(projectKey, userId, res) {
-  const project = await QuicklookProject.findOne({ projectKey }).lean();
-  if (!project) {
-    res.status(404).json({ success: false, error: "Project not found" });
-    return null;
-  }
-  if (project.owner !== userId) {
-    res.status(403).json({ success: false, error: "Forbidden" });
-    return null;
-  }
-  return project;
-}
+import { getProjectForUser, canEditSessions } from "../utils/projectAccess.js";
 
 /** GET /insights?projectKey=...&status=...&limit=50 */
 export const getInsights = async (req, res) => {
@@ -26,8 +12,8 @@ export const getInsights = async (req, res) => {
     if (!projectKey) {
       return res.status(400).json({ success: false, error: "projectKey is required" });
     }
-    const project = await getProjectForUser(projectKey, req.user.userId, res);
-    if (!project) return;
+    const access = await getProjectForUser(projectKey, req.user.userId, res);
+    if (!access) return;
     const filter = { projectKey };
     if (status && ["active", "resolved", "ignored"].includes(status)) {
       filter.status = status;
@@ -52,8 +38,8 @@ export const getInsightById = async (req, res) => {
     if (!insight) {
       return res.status(404).json({ success: false, error: "Insight not found" });
     }
-    const project = await getProjectForUser(insight.projectKey, req.user.userId, res);
-    if (!project) return;
+    const access = await getProjectForUser(insight.projectKey, req.user.userId, res);
+    if (!access) return;
     return res.json({ success: true, data: insight });
   } catch (err) {
     logger.error("quicklook getInsightById", { error: err.message });
@@ -70,8 +56,11 @@ export const patchInsight = async (req, res) => {
     if (!insight) {
       return res.status(404).json({ success: false, error: "Insight not found" });
     }
-    const project = await getProjectForUser(insight.projectKey, req.user.userId, res);
-    if (!project) return;
+    const access = await getProjectForUser(insight.projectKey, req.user.userId, res);
+    if (!access) return;
+    if (!canEditSessions(access.role)) {
+      return res.status(403).json({ success: false, error: "Viewers cannot edit insights.", code: "FORBIDDEN_VIEWER" });
+    }
     const update = { updatedAt: new Date() };
     if (status && ["active", "resolved", "ignored"].includes(status)) {
       update.status = status;
@@ -126,8 +115,11 @@ export const postInsightsGenerate = async (req, res) => {
         error: "projectKey is required. Provide it in the request body or as a query parameter.",
       });
     }
-    const project = await getProjectForUser(projectKey, req.user.userId, res);
-    if (!project) return;
+    const access = await getProjectForUser(projectKey, req.user.userId, res);
+    if (!access) return;
+    if (!canEditSessions(access.role)) {
+      return res.status(403).json({ success: false, error: "Viewers cannot generate insights.", code: "FORBIDDEN_VIEWER" });
+    }
     const base = process.env.QUICKLOOK_ANALYTICS_URL || process.env.ANALYTICS_BASE_URL || "";
     if (!base) {
       return res.status(501).json({

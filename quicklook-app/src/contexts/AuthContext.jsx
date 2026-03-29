@@ -104,7 +104,10 @@ export function AuthProvider({ children }) {
       if (token && userData) {
         setAuthToken(token);
         setUser(userFromData(userData));
-        return { success: true };
+        return {
+          success: true,
+          inviteAcceptedProjectKey: res.data?.inviteAcceptedProjectKey || null,
+        };
       }
       return { success: false, error: res.data?.error || "Registration failed" };
     } catch (err) {

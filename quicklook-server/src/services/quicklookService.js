@@ -137,6 +137,13 @@ export async function hasReachedSessionCap(userId) {
 }
 
 export const QuicklookService = {
+  _userCanShareProject(project, userId) {
+    if (!project || userId == null) return false;
+    if (String(project.owner) === String(userId)) return true;
+    const m = (project.members || []).find((x) => String(x.userId) === String(userId));
+    return Boolean(m && m.role === "editor");
+  },
+
   async startSession({ projectKey, meta, user, ipAddress, retentionDays, geo = null, attributes = null, parentSessionId = null, sessionChainId = null, sequenceNumber = 1, splitReason = null, deviceId = null, deviceFingerprint = null }) {
     // Get project to use its retentionDays (set based on plan)
     const project = await QuicklookProject.findOne({ projectKey }).select("owner retentionDays").lean();
@@ -652,12 +659,13 @@ export const QuicklookService = {
     return { closed: closedCount };
   },
 
-  /** Create or refresh a public share token for a session. Caller must own the project. */
+  /** Create or refresh a public share token. Caller must be project owner or editor member. */
   async createShareToken(sessionId, userId, expiresInDays = 7) {
     const session = await QuicklookSession.findOne({ sessionId }).select("projectKey").lean();
     if (!session) return null;
-    const project = await QuicklookProject.findOne({ projectKey: session.projectKey }).select("owner").lean();
-    if (!project || String(project.owner) !== String(userId)) return null;
+    const project = await QuicklookProject.findOne({ projectKey: session.projectKey }).select("owner members").lean();
+    if (!project) return null;
+    if (!this._userCanShareProject(project, userId)) return null;
     const crypto = await import("crypto");
     const shareToken = crypto.randomBytes(24).toString("base64url");
     const shareExpiresAt = new Date(Date.now() + expiresInDays * 86400000);
@@ -668,12 +676,12 @@ export const QuicklookService = {
     return { shareToken, shareExpiresAt };
   },
 
-  /** Revoke public share for a session. Caller must own the project. */
+  /** Revoke public share. Caller must be project owner or editor member. */
   async revokeShareToken(sessionId, userId) {
     const session = await QuicklookSession.findOne({ sessionId }).select("projectKey").lean();
     if (!session) return false;
-    const project = await QuicklookProject.findOne({ projectKey: session.projectKey }).select("owner").lean();
-    if (!project || String(project.owner) !== String(userId)) return false;
+    const project = await QuicklookProject.findOne({ projectKey: session.projectKey }).select("owner members").lean();
+    if (!project || !this._userCanShareProject(project, userId)) return false;
     await QuicklookSession.updateOne(
       { sessionId },
       { $unset: { shareToken: "", shareExpiresAt: "" } }

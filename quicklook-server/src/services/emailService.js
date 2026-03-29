@@ -164,6 +164,43 @@ export async function sendAdminNotification(payload) {
   }
 }
 
+/** Project invite — recipient already has an account */
+export async function sendProjectInviteEmail(email, inviterName, projectName, role, acceptUrl) {
+  const roleLabel = role === "editor" ? "Editor" : "Viewer";
+  const subject = `${inviterName || "Someone"} invited you to "${projectName}" on Quicklook`;
+  const text = `You've been invited to collaborate on the project "${projectName}" as ${roleLabel}.\n\nOpen this link to accept (sign in if needed):\n${acceptUrl}\n\nThe invitation expires in 7 days.\n\n— Quicklook`;
+  const html = `
+<!DOCTYPE html>
+<html>
+<body style="font-family: sans-serif; line-height: 1.5; color: #333;">
+  <p><strong>${escapeHtml(inviterName || "A teammate")}</strong> invited you to the project <strong>${escapeHtml(projectName)}</strong> as <strong>${escapeHtml(roleLabel)}</strong>.</p>
+  <p><a href="${escapeHtml(acceptUrl)}" style="color: #6366f1;">Accept invitation</a></p>
+  <p>The link expires in 7 days.</p>
+  <p>— Quicklook</p>
+</body>
+</html>`;
+  return sendEmail({ to: email, subject, text, html });
+}
+
+/** Project invite — recipient must sign up first */
+export async function sendProjectInviteSignupEmail(email, inviterName, projectName, role, signupUrl) {
+  const roleLabel = role === "editor" ? "Editor" : "Viewer";
+  const subject = `${inviterName || "Someone"} invited you to "${projectName}" on Quicklook`;
+  const text = `You've been invited to collaborate on "${projectName}" as ${roleLabel}.\n\nCreate a Quicklook account to accept:\n${signupUrl}\n\nThe invitation expires in 7 days.\n\n— Quicklook`;
+  const html = `
+<!DOCTYPE html>
+<html>
+<body style="font-family: sans-serif; line-height: 1.5; color: #333;">
+  <p><strong>${escapeHtml(inviterName || "A teammate")}</strong> invited you to <strong>${escapeHtml(projectName)}</strong> as <strong>${escapeHtml(roleLabel)}</strong>.</p>
+  <p>Create an account to join:</p>
+  <p><a href="${escapeHtml(signupUrl)}" style="color: #6366f1;">Sign up and accept</a></p>
+  <p>The link expires in 7 days.</p>
+  <p>— Quicklook</p>
+</body>
+</html>`;
+  return sendEmail({ to: email, subject, text, html });
+}
+
 /** Forgot password: send reset link */
 export async function sendResetPasswordEmail(email, token) {
   const resetUrl = `${FRONTEND_URL}/reset-password?token=${encodeURIComponent(token)}`;

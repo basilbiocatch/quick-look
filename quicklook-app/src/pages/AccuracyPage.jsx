@@ -22,6 +22,7 @@ import ScienceIcon from "@mui/icons-material/Science";
 import Button from "@mui/material/Button";
 import PsychologyIcon from "@mui/icons-material/Psychology";
 import { useAuth } from "../contexts/AuthContext";
+import { useProjectRole } from "../contexts/ProjectsContext";
 import ProFeatureGate from "../components/ProFeatureGate";
 import { getAccuracyMetrics, postModelsRetrain } from "../api/quicklookApi";
 
@@ -29,6 +30,8 @@ export default function AccuracyPage() {
   const { projectKey } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { role: projectRole } = useProjectRole(projectKey);
+  const canRetrain = projectRole !== "viewer";
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -103,14 +106,16 @@ export default function AccuracyPage() {
           <Button variant="outlined" startIcon={<RefreshIcon />} onClick={fetchMetrics} disabled={loading}>
             Refresh
           </Button>
-          <Button
-            variant="outlined"
-            startIcon={retraining ? <CircularProgress size={16} /> : <PsychologyIcon />}
-            onClick={handleRetrain}
-            disabled={retraining}
-          >
-            {retraining ? "Retraining…" : "Retrain model"}
-          </Button>
+          {canRetrain && (
+            <Button
+              variant="outlined"
+              startIcon={retraining ? <CircularProgress size={16} /> : <PsychologyIcon />}
+              onClick={handleRetrain}
+              disabled={retraining}
+            >
+              {retraining ? "Retraining…" : "Retrain model"}
+            </Button>
+          )}
         </Box>
       </Box>
       {retrainMessage && (

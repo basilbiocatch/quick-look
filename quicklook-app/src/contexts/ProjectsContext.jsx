@@ -3,6 +3,21 @@ import { getProjects } from "../api/quicklookApi";
 
 const ProjectsContext = createContext(null);
 
+/**
+ * Role for the current user on a project (from GET /projects).
+ * @returns {{ role: "owner" | "editor" | "viewer" | null, loading: boolean }}
+ */
+export function useProjectRole(projectKey) {
+  const ctx = useContext(ProjectsContext);
+  if (!ctx) {
+    return { role: null, loading: false };
+  }
+  const { projects, loading } = ctx;
+  if (!projectKey) return { role: null, loading };
+  const p = projects.find((x) => x.projectKey === projectKey);
+  return { role: p?.role ?? null, loading };
+}
+
 export function ProjectsProvider({ children }) {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);

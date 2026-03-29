@@ -3,8 +3,8 @@
 import { v4 as uuidv4 } from "uuid";
 import QuicklookTrackedEvent from "../models/quicklookTrackedEventModel.js";
 import QuicklookSession from "../models/quicklookSessionModel.js";
-import QuicklookProject from "../models/quicklookProjectModel.js";
 import logger from "../configs/loggingConfig.js";
+import { getProjectForUser } from "../utils/projectAccess.js";
 
 const MAX_NAME_LENGTH = 128;
 const MAX_PROPERTIES_BYTES = 8192;
@@ -34,22 +34,6 @@ function validateProperties(properties) {
     return { ok: false, error: `properties JSON must be at most ${MAX_PROPERTIES_BYTES} bytes` };
   }
   return { ok: true, value: properties };
-}
-
-/** Ensure user owns the project; if not, send 404/403 and return null. */
-async function getProjectForUser(projectKey, userId, res) {
-  const project = await QuicklookProject.findOne({ projectKey }).lean();
-  if (!project) {
-    res.status(404).json({ success: false, error: "Project not found" });
-    return null;
-  }
-  const ownerStr = project.owner != null ? String(project.owner) : "";
-  const userIdStr = userId != null ? String(userId) : "";
-  if (ownerStr !== userIdStr) {
-    res.status(403).json({ success: false, error: "You don't have access to this project." });
-    return null;
-  }
-  return project;
 }
 
 function parseRange(fromStr, toStr) {
@@ -133,8 +117,8 @@ export const getEventsSummary = async (req, res) => {
     if (!projectKey) {
       return res.status(400).json({ success: false, error: "projectKey is required" });
     }
-    const project = await getProjectForUser(projectKey, req.user.userId, res);
-    if (!project) return;
+    const access = await getProjectForUser(projectKey, req.user.userId, res);
+    if (!access) return;
 
     const range = parseRange(fromStr, toStr);
     if (range.error) {
@@ -207,8 +191,8 @@ export const getEventNames = async (req, res) => {
     if (!projectKey) {
       return res.status(400).json({ success: false, error: "projectKey is required" });
     }
-    const project = await getProjectForUser(projectKey, req.user.userId, res);
-    if (!project) return;
+    const access = await getProjectForUser(projectKey, req.user.userId, res);
+    if (!access) return;
 
     const range = parseRange(fromStr, toStr);
     if (range.error) {
@@ -240,8 +224,8 @@ export const getEventsAnalytics = async (req, res) => {
     if (!projectKey) {
       return res.status(400).json({ success: false, error: "projectKey is required" });
     }
-    const project = await getProjectForUser(projectKey, req.user.userId, res);
-    if (!project) return;
+    const access = await getProjectForUser(projectKey, req.user.userId, res);
+    if (!access) return;
 
     const range = parseRange(fromStr, toStr);
     if (range.error) {
@@ -383,8 +367,8 @@ export const getSessionTrackedEvents = async (req, res) => {
     if (!session) {
       return res.status(404).json({ success: false, error: "Session not found" });
     }
-    const project = await getProjectForUser(session.projectKey, req.user.userId, res);
-    if (!project) return;
+    const access = await getProjectForUser(session.projectKey, req.user.userId, res);
+    if (!access) return;
 
     const events = await QuicklookTrackedEvent.find({ sessionId })
       .sort({ createdAt: 1 })

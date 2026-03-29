@@ -20,6 +20,7 @@ import AssessmentIcon from "@mui/icons-material/Assessment";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import { useAuth } from "../contexts/AuthContext";
+import { useProjectRole } from "../contexts/ProjectsContext";
 import ProFeatureGate from "../components/ProFeatureGate";
 import { getReports, getReport, postReportsGenerate } from "../api/quicklookApi";
 
@@ -34,6 +35,8 @@ export default function ReportsPage() {
   const { projectKey } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { role: projectRole } = useProjectRole(projectKey);
+  const canEditReports = projectRole !== "viewer";
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -142,14 +145,16 @@ export default function ReportsPage() {
               ))}
             </Select>
           </FormControl>
-          <Button
-            variant="contained"
-            startIcon={generating ? <CircularProgress size={16} color="inherit" /> : <AutoAwesomeIcon />}
-            onClick={() => handleGenerate("weekly")}
-            disabled={generating}
-          >
-            {generating ? "Generating…" : "Generate report"}
-          </Button>
+          {canEditReports && (
+            <Button
+              variant="contained"
+              startIcon={generating ? <CircularProgress size={16} color="inherit" /> : <AutoAwesomeIcon />}
+              onClick={() => handleGenerate("weekly")}
+              disabled={generating}
+            >
+              {generating ? "Generating…" : "Generate report"}
+            </Button>
+          )}
           <Button variant="outlined" startIcon={<RefreshIcon />} onClick={fetchReports} disabled={loading}>
             Refresh
           </Button>

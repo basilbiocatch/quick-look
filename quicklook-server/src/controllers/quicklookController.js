@@ -8,26 +8,7 @@ import { getGeoFromIP } from "../utils/geoFromIP.js";
 import { getRetentionDaysByPlan } from "../utils/retentionConfig.js";
 import User from "../models/userModel.js";
 import logger from "../configs/loggingConfig.js";
-
-/** If project not found or not owned by userId, returns response and null; else returns project. */
-async function getProjectForUser(projectKey, userId, res) {
-  const project = await QuicklookProject.findOne({ projectKey }).lean();
-  if (!project) {
-    res.status(404).json({ success: false, error: "Project not found" });
-    return null;
-  }
-  const ownerStr = project.owner != null ? String(project.owner) : "";
-  const userIdStr = userId != null ? String(userId) : "";
-  if (ownerStr !== userIdStr) {
-    res.status(403).json({
-      success: false,
-      error: "You don't have access to this project.",
-      code: "FORBIDDEN_PROJECT",
-    });
-    return null;
-  }
-  return project;
-}
+import { getProjectForUser, canEditSessions, canManageProject } from "../utils/projectAccess.js";
 
 export const startSession = async (req, res) => {
   try {
@@ -128,8 +109,8 @@ export const getSessions = async (req, res) => {
     if (!projectKey) {
       return res.status(400).json({ success: false, error: "projectKey is required" });
     }
-    const project = await getProjectForUser(projectKey, req.user.userId, res);
-    if (!project) return;
+    const access = await getProjectForUser(projectKey, req.user.userId, res);
+    if (!access) return;
     const sessionIds = sessionIdsParam
       ? (Array.isArray(sessionIdsParam) ? sessionIdsParam : String(sessionIdsParam).split(","))
           .map((id) => String(id).trim())
@@ -161,8 +142,8 @@ export const getSession = async (req, res) => {
     if (!session) {
       return res.status(404).json({ success: false, error: "Session not found" });
     }
-    const project = await getProjectForUser(session.projectKey, req.user.userId, res);
-    if (!project) return;
+    const access = await getProjectForUser(session.projectKey, req.user.userId, res);
+    if (!access) return;
     return res.json({ success: true, data: session });
   } catch (err) {
     logger.error("quicklook getSession", { error: err.message });
@@ -177,8 +158,8 @@ export const getEvents = async (req, res) => {
     if (!session) {
       return res.status(404).json({ success: false, error: "Session not found" });
     }
-    const project = await getProjectForUser(session.projectKey, req.user.userId, res);
-    if (!project) return;
+    const access = await getProjectForUser(session.projectKey, req.user.userId, res);
+    if (!access) return;
     const result = await QuicklookService.getSessionEvents(sessionId);
     
     // Log response size for compression monitoring
@@ -209,8 +190,8 @@ export const getSessionChunks = async (req, res) => {
     if (!session) {
       return res.status(404).json({ success: false, error: "Session not found" });
     }
-    const project = await getProjectForUser(session.projectKey, req.user.userId, res);
-    if (!project) return;
+    const access = await getProjectForUser(session.projectKey, req.user.userId, res);
+    if (!access) return;
 
     const result = await QuicklookService.getSessionChunksBatch(sessionId, start, limit);
     return res.json(result);
@@ -222,11 +203,32 @@ export const getSessionChunks = async (req, res) => {
 
 export const getProjects = async (req, res) => {
   try {
-    const projects = await QuicklookProject.find({ owner: req.user.userId })
+    const userId = String(req.user.userId);
+    const projects = await QuicklookProject.find({
+      $or: [{ owner: userId }, { "members.userId": userId }],
+    })
       .sort({ createdAt: -1 })
-      .select("projectId projectKey name allowedDomains excludedUrls retentionDays createdAt updatedAt thumbnailUrl")
+      .select("projectId projectKey name allowedDomains excludedUrls retentionDays createdAt updatedAt thumbnailUrl owner members")
       .lean();
-    return res.json({ success: true, data: projects });
+    const data = projects.map((p) => {
+      const role =
+        String(p.owner) === userId
+          ? "owner"
+          : (p.members || []).find((m) => String(m.userId) === userId)?.role || "viewer";
+      return {
+        projectId: p.projectId,
+        projectKey: p.projectKey,
+        name: p.name,
+        allowedDomains: p.allowedDomains,
+        excludedUrls: p.excludedUrls,
+        retentionDays: p.retentionDays,
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt,
+        thumbnailUrl: p.thumbnailUrl,
+        role,
+      };
+    });
+    return res.json({ success: true, data });
   } catch (err) {
     logger.error("quicklook getProjects", { error: err.message });
     return res.status(500).json({ success: false, error: err.message });
@@ -259,8 +261,9 @@ export const getProjectConfig = async (req, res) => {
 export const getProject = async (req, res) => {
   try {
     const { projectKey } = req.params;
-    const project = await getProjectForUser(projectKey, req.user.userId, res);
-    if (!project) return;
+    const access = await getProjectForUser(projectKey, req.user.userId, res);
+    if (!access) return;
+    const { project, role } = access;
     return res.json({
       success: true,
       data: {
@@ -274,6 +277,7 @@ export const getProject = async (req, res) => {
         thumbnailUrl: project.thumbnailUrl || null,
         createdAt: project.createdAt,
         updatedAt: project.updatedAt,
+        role,
       },
     });
   } catch (err) {
@@ -286,8 +290,16 @@ export const getProject = async (req, res) => {
 export const updateProject = async (req, res) => {
   try {
     const { projectKey } = req.params;
-    const project = await getProjectForUser(projectKey, req.user.userId, res);
-    if (!project) return;
+    const access = await getProjectForUser(projectKey, req.user.userId, res);
+    if (!access) return;
+    const { role: userRole } = access;
+    if (!canManageProject(userRole)) {
+      return res.status(403).json({
+        success: false,
+        error: "Only the project owner can change settings.",
+        code: "FORBIDDEN_NOT_OWNER",
+      });
+    }
     const { name, allowedDomains, excludedUrls, deviceIdEnabled, thumbnailUrl } = req.body || {};
     const update = { updatedAt: new Date() };
     if (typeof name === "string" && name.trim()) update.name = name.trim();
@@ -315,6 +327,7 @@ export const updateProject = async (req, res) => {
         thumbnailUrl: updated.thumbnailUrl || null,
         createdAt: updated.createdAt,
         updatedAt: updated.updatedAt,
+        role: userRole,
       },
     });
   } catch (err) {
@@ -384,8 +397,15 @@ export const createProject = async (req, res) => {
 export const deleteProject = async (req, res) => {
   try {
     const { projectKey } = req.params;
-    const project = await getProjectForUser(projectKey, req.user.userId, res);
-    if (!project) return;
+    const access = await getProjectForUser(projectKey, req.user.userId, res);
+    if (!access) return;
+    if (!canManageProject(access.role)) {
+      return res.status(403).json({
+        success: false,
+        error: "Only the project owner can delete the project.",
+        code: "FORBIDDEN_NOT_OWNER",
+      });
+    }
     const result = await QuicklookService.deleteProject(projectKey);
     return res.json({
       success: true,
@@ -413,8 +433,8 @@ export const ensureSummary = async (req, res) => {
     if (!session) {
       return res.status(404).json({ success: false, error: "Session not found" });
     }
-    const project = await getProjectForUser(session.projectKey, req.user.userId, res);
-    if (!project) return;
+    const access = await getProjectForUser(session.projectKey, req.user.userId, res);
+    if (!access) return;
     const base = process.env.QUICKLOOK_ANALYTICS_URL || process.env.ANALYTICS_BASE_URL || "";
     if (!base) {
       return res.status(503).json({
@@ -466,8 +486,8 @@ export const ensureRootCause = async (req, res) => {
     if (!session) {
       return res.status(404).json({ success: false, error: "Session not found" });
     }
-    const project = await getProjectForUser(session.projectKey, req.user.userId, res);
-    if (!project) return;
+    const access = await getProjectForUser(session.projectKey, req.user.userId, res);
+    if (!access) return;
     const base = process.env.QUICKLOOK_ANALYTICS_URL || process.env.ANALYTICS_BASE_URL || "";
     if (!base) {
       return res.status(503).json({
@@ -514,8 +534,15 @@ export const createShare = async (req, res) => {
     if (!session) {
       return res.status(404).json({ success: false, error: "Session not found" });
     }
-    const project = await getProjectForUser(session.projectKey, req.user.userId, res);
-    if (!project) return;
+    const access = await getProjectForUser(session.projectKey, req.user.userId, res);
+    if (!access) return;
+    if (!canEditSessions(access.role)) {
+      return res.status(403).json({
+        success: false,
+        error: "You don't have permission to share sessions on this project.",
+        code: "FORBIDDEN_VIEWER",
+      });
+    }
     const result = await QuicklookService.createShareToken(sessionId, req.user.userId, 7);
     if (!result) {
       return res.status(500).json({ success: false, error: "Failed to create share link" });
@@ -540,8 +567,15 @@ export const revokeShare = async (req, res) => {
     if (!session) {
       return res.status(404).json({ success: false, error: "Session not found" });
     }
-    const project = await getProjectForUser(session.projectKey, req.user.userId, res);
-    if (!project) return;
+    const access = await getProjectForUser(session.projectKey, req.user.userId, res);
+    if (!access) return;
+    if (!canEditSessions(access.role)) {
+      return res.status(403).json({
+        success: false,
+        error: "You don't have permission to manage share links on this project.",
+        code: "FORBIDDEN_VIEWER",
+      });
+    }
     const ok = await QuicklookService.revokeShareToken(sessionId, req.user.userId);
     if (!ok) {
       return res.status(500).json({ success: false, error: "Failed to revoke share link" });
